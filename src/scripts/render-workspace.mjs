@@ -92,6 +92,7 @@ function validateGraph(nodes, edges, knownSet, sourceIds, allowMissingSources = 
   if (!Array.isArray(nodes) || !Array.isArray(edges) || !Array.isArray(knownSet)) fail("graph nodes, edges, and known set must be arrays");
   for (const node of nodes) {
     requireObject(node, "concept");
+    if (Object.keys(node).some((key) => !["id", "label", "description", "sourceIds"].includes(key))) fail(`concept contains a non-semantic field: ${node.id}`);
     validateId(node.id, "concept ID");
     requireText(node.label, `concept label (${node.id})`);
     requireText(node.description, `concept description (${node.id})`);
@@ -109,6 +110,7 @@ function validateGraph(nodes, edges, knownSet, sourceIds, allowMissingSources = 
   const edgeKeys = new Set();
   for (const edge of edges) {
     requireObject(edge, "prerequisite edge");
+    if (Object.keys(edge).some((key) => !["from", "to", "sourceIds"].includes(key))) fail(`prerequisite edge contains a non-semantic field: ${edge.from} -> ${edge.to}`);
     const { from, to, sourceIds: edgeSourceIds } = edge;
     if (!ids.has(from) || !ids.has(to)) fail(`edge references an unknown concept: ${from} -> ${to}`);
     if (from === to) fail(`concept cannot be its own prerequisite: ${from}`);
@@ -385,7 +387,7 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg) {
 async function check() {
   const template = await readFile(templatePath, "utf8");
   assert.equal(template.split("__LEARN_DATA__").length, 2);
-  for (const marker of ['id="graph-canvas"', 'id="note-empty"', 'id="learn-data"']) assert.ok(template.includes(marker));
+  for (const marker of ['id="graph-canvas"', 'id="note-empty"', 'id="learn-data"', "mass: nodeRadius * nodeRadius", "requestAnimationFrame(runSimulation)", "context.lineTo(baseX - uy * halfWidth"]) assert.ok(template.includes(marker));
   const nodes = ["a", "b", "c"].map((id) => ({ id, label: id.toUpperCase(), description: `${id} description`, sourceIds: ["s"] }));
   const edges = [{ from: "a", to: "b", sourceIds: ["s"] }, { from: "b", to: "c", sourceIds: ["s"] }];
   validateGraph(nodes, edges, ["a"], new Set(["s"]));
@@ -395,6 +397,8 @@ async function check() {
   assert.throws(() => validateGraph([{ id: "a", label: "A", description: "A description", sourceIds: ["removed"] }], [], [], new Set()), /unknown source/);
   validateGraph([{ id: "a", label: "A", description: "A description", sourceIds: ["removed"] }], [], [], new Set(), true);
   assert.throws(() => validateGraph([{ id: "a", description: "A description", sourceIds: ["s"] }], [], [], new Set(["s"])), /concept label/);
+  assert.throws(() => validateGraph([{ ...nodes[0], x: 10 }], [], [], new Set(["s"])), /non-semantic field/);
+  assert.throws(() => validateGraph(nodes, [{ ...edges[0], color: "red" }], [], new Set(["s"])), /non-semantic field/);
   assert.throws(() => validateId("../escape", "test ID"), /must use/);
   assert.notEqual(pageName("a--b", "c"), pageName("a", "b--c"));
   validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "html/artifacts/lesson.html", labels: ["canonical"], citations: [{ sourceId: "s", locator: "§1" }] });

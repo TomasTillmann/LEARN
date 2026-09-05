@@ -192,9 +192,9 @@
       <main class="panes">
         <section class="pane graph-pane active" id="pane-graph" aria-label="Concept graph">
           <div class="graph-stage" id="graph-stage">
-            <canvas id="graph-canvas" aria-label="Interactive concept graph. Use the Notes list for keyboard access."></canvas>
+            <canvas id="graph-canvas" aria-label="Interactive prerequisite graph. Arrows point from prerequisite to dependent. Use the Notes list for keyboard access."></canvas>
             <div class="empty" id="graph-empty" hidden>Generate learning materials in chat.</div>
-            <div class="graph-key" id="graph-key">Scroll to zoom · drag to move · click a note to open</div>
+            <div class="graph-key" id="graph-key">Arrows: prerequisite → dependent · scroll to zoom · drag to move · click a note to open</div>
             <div class="graph-tools" aria-label="Graph controls">
               <button class="tool-button" id="zoom-out" type="button" aria-label="Zoom out">−</button>
               <button class="tool-button" id="reset-view" type="button" aria-label="Reset graph view">⌂</button>
@@ -413,25 +413,44 @@
         for (const char of node.id) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
         const angle = index * 2.399963 + (hash >>> 0) / 4294967296;
         const radius = 45 + 22 * Math.sqrt(index);
-        return { ...node, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0, radius: 4 + Math.min(4, (degree.get(node.id) || 0) * .65) };
+        const nodeRadius = 4 + Math.min(7, Math.sqrt(degree.get(node.id) || 0) * 2.2);
+        return { ...node, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0, radius: nodeRadius, mass: nodeRadius * nodeRadius / 16 };
       });
       const byPoint = new Map(points.map(point => [point.id, point]));
+      let simulationFrame = null, simulationTicks = 0;
 
-      function settleGraph() {
+      function tickGraph() {
         // ponytail: pairwise repulsion is simplest; use Barnes-Hut if topics grow past a few hundred concepts.
-        for (let step = 0; step < 260; step++) {
-          for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-            const a = points[i], b = points[j], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
-            const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
-            a.vx -= dx * force; a.vy -= dy * force; b.vx += dx * force; b.vy += dy * force;
-          }
-          edges.forEach(edge => {
-            const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
-            const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1, force = (distance - 112) * .012;
-            a.vx += dx / distance * force; a.vy += dy / distance * force; b.vx -= dx / distance * force; b.vy -= dy / distance * force;
-          });
-          points.forEach(point => { point.vx -= point.x * .0025; point.vy -= point.y * .0025; point.vx *= .78; point.vy *= .78; point.x += point.vx; point.y += point.vy; });
+        for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+          const a = points[i], b = points[j], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
+          const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
+          a.vx -= dx * force / a.mass; a.vy -= dy * force / a.mass; b.vx += dx * force / b.mass; b.vy += dy * force / b.mass;
         }
+        edges.forEach(edge => {
+          const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
+          const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1, force = (distance - 112) * .012;
+          a.vx += dx / distance * force / a.mass; a.vy += dy / distance * force / a.mass;
+          b.vx -= dx / distance * force / b.mass; b.vy -= dy / distance * force / b.mass;
+        });
+        let movement = 0;
+        points.forEach(point => {
+          if (drag?.node === point) { point.vx = point.vy = 0; return; }
+          point.vx = (point.vx - point.x * .0025) * .78; point.vy = (point.vy - point.y * .0025) * .78;
+          point.x += point.vx; point.y += point.vy; movement += Math.abs(point.vx) + Math.abs(point.vy);
+        });
+        return movement;
+      }
+
+      function runSimulation() {
+        simulationFrame = null;
+        const movement = tickGraph() + tickGraph();
+        simulationTicks += 2; drawGraph();
+        if (simulationTicks < 260 && movement > .01) simulationFrame = requestAnimationFrame(runSimulation);
+      }
+
+      function heatGraph() {
+        simulationTicks = 0;
+        if (simulationFrame === null) simulationFrame = requestAnimationFrame(runSimulation);
       }
 
       function screen(point) { return { x: width / 2 + (point.x + panX) * scale, y: height / 2 + (point.y + panY) * scale }; }
@@ -446,8 +465,14 @@
         edges.forEach(edge => {
           const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
           const from = screen(a), to = screen(b);
-          context.strokeStyle = hoverId && !related(hoverId, edge) ? "#343434" : "#555";
-          context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+          const dx = to.x - from.x, dy = to.y - from.y, distance = Math.hypot(dx, dy) || 1;
+          const ux = dx / distance, uy = dy / distance, arrow = 9, halfWidth = 4.5;
+          const fromRadius = Math.max(2.5, a.radius * Math.sqrt(scale));
+          const tipX = to.x - ux * (Math.max(2.5, b.radius * Math.sqrt(scale)) + 2), tipY = to.y - uy * (Math.max(2.5, b.radius * Math.sqrt(scale)) + 2);
+          const baseX = tipX - ux * arrow, baseY = tipY - uy * arrow;
+          context.strokeStyle = context.fillStyle = hoverId && !related(hoverId, edge) ? "#343434" : "#686868";
+          context.beginPath(); context.moveTo(from.x + ux * fromRadius, from.y + uy * fromRadius); context.lineTo(baseX, baseY); context.stroke();
+          context.beginPath(); context.moveTo(tipX, tipY); context.lineTo(baseX - uy * halfWidth, baseY + ux * halfWidth); context.lineTo(baseX + uy * halfWidth, baseY - ux * halfWidth); context.closePath(); context.fill();
         });
         points.forEach(point => {
           const position = screen(point), connected = !hoverId || point.id === hoverId || edges.some(edge => related(hoverId, edge) && (edge.from === point.id || edge.to === point.id));
@@ -489,7 +514,7 @@
       canvas.addEventListener("pointermove", event => {
         if (!drag) { hoverId = nodeAt(event.offsetX, event.offsetY)?.id || null; canvas.style.cursor = hoverId ? "pointer" : "grab"; drawGraph(); return; }
         const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.moved ||= Math.hypot(dx, dy) > 4;
-        if (drag.node) { drag.node.x += dx / scale; drag.node.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; }
+        if (drag.node) { drag.node.x += dx / scale; drag.node.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; heatGraph(); }
         else { panX = drag.panX + dx / scale; panY = drag.panY + dy / scale; }
         drawGraph();
       });
@@ -505,7 +530,6 @@
         panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph();
       }, { passive: false });
 
-      settleGraph();
       renderWorkspace(); renderSources(); renderSession();
       $("#graph-empty").hidden = Boolean(nodes.length);
       $("#graph-key").hidden = !nodes.length; $(".graph-tools").hidden = !nodes.length;
@@ -517,7 +541,7 @@
       $("#zoom-out").addEventListener("click", () => { scale = Math.max(.25, scale / 1.2); drawGraph(); });
       $("#reset-view").addEventListener("click", resetView);
       window.addEventListener("resize", resizeCanvas);
-      requestAnimationFrame(() => { resizeCanvas(); resetView(); });
+      requestAnimationFrame(() => { resizeCanvas(); resetView(); heatGraph(); });
     })();
   </script>
 </body>
