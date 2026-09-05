@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>LEARN</title>
+  <style>
+    :root {
+      --background-primary: #202020;
+      --background-secondary: #262626;
+      --background-modifier-hover: #303030;
+      --border: #363636;
+      --text: #dcddde;
+      --muted: #929292;
+      --faint: #6f6f6f;
+      --accent: #8b7cf6;
+      --accent-soft: #a99df8;
+      --frontier: #c4a7ff;
+      --danger: #e78a8a;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--background-primary);
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { font-size: 14px; line-height: 1.55; }
+    button, input { color: inherit; font: inherit; }
+    button { border: 0; }
+    button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    a { color: var(--accent-soft); text-underline-offset: 3px; }
+
+    .app { height: 100%; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
+    .sidebar {
+      min-width: 0;
+      border-right: 1px solid var(--border);
+      background: var(--background-secondary);
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+    }
+    .vault {
+      height: 42px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 650;
+    }
+    .vault-mark { width: 14px; height: 14px; color: var(--accent); }
+    .vault-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nav { padding: 9px; border-bottom: 1px solid var(--border); }
+    .nav-button, .note-button, .source-button {
+      width: 100%;
+      min-height: 32px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      color: #b7b7b7;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .nav-button:hover, .note-button:hover, .source-button:hover,
+    .nav-button[aria-current="page"], .note-button[aria-current="page"], .source-button[aria-current="page"] {
+      color: var(--text);
+      background: var(--background-modifier-hover);
+    }
+    .icon { width: 17px; color: var(--muted); font: 14px/1 ui-monospace, monospace; text-align: center; }
+    .tree { min-height: 0; padding: 10px 8px 18px; overflow: auto; scrollbar-width: thin; }
+    .tree-label { margin: 4px 8px 6px; color: var(--faint); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
+    .project { margin: 0 0 10px; }
+    .project summary { padding: 4px 8px; color: #bdbdbd; cursor: pointer; font-weight: 600; list-style: none; }
+    .project summary::before { content: "›"; display: inline-block; width: 15px; color: var(--muted); }
+    .project[open] summary::before { transform: rotate(90deg); }
+    .project summary::-webkit-details-marker { display: none; }
+    .topic-list, .note-list, .source-list { margin: 0; padding: 0; list-style: none; }
+    .topic-link { display: block; padding: 4px 8px 4px 24px; border-radius: 5px; color: #aaa; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topic-link:hover, .topic-link.current { color: var(--text); background: var(--background-modifier-hover); }
+    .note-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #777; }
+    .note-dot.known { background: var(--accent); }
+    .note-dot.frontier { background: var(--frontier); box-shadow: 0 0 0 2px rgb(196 167 255 / .16); }
+    .sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11px; }
+
+    .workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: 42px minmax(0, 1fr); }
+    .titlebar {
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--background-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .menu { display: none; width: 28px; height: 28px; border-radius: 5px; background: transparent; cursor: pointer; }
+    .menu:hover { background: var(--background-modifier-hover); }
+    .breadcrumb { min-width: 0; flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .breadcrumb strong { color: var(--text); font-weight: 600; }
+    .status { padding: 2px 7px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    .status.pending { color: var(--frontier); border-color: #5a4d78; }
+    .panes { position: relative; min-height: 0; }
+    .pane { position: absolute; inset: 0; display: none; min-width: 0; min-height: 0; background: var(--background-primary); }
+    .pane.active { display: block; }
+
+    .graph-pane { background: #1e1e1e; }
+    .graph-stage { position: absolute; inset: 0; overflow: hidden; }
+    #graph-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+    #graph-canvas.dragging { cursor: grabbing; }
+    .graph-tools { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 4px; }
+    .tool-button { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); background: #292929e8; cursor: pointer; }
+    .tool-button:hover { color: var(--text); background: #333; }
+    .graph-key { position: absolute; left: 14px; bottom: 15px; color: var(--faint); font-size: 11px; pointer-events: none; }
+
+    .note-pane, .source-pane, .session-pane { overflow: auto; }
+    .document { width: min(760px, calc(100% - 48px)); margin: 0 auto; padding: 58px 0 90px; }
+    .document h1 { margin: 0 0 9px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.035em; }
+    .document h2 { margin: 38px 0 12px; font-size: 24px; line-height: 1.25; }
+    .document h3 { margin: 30px 0 9px; font-size: 18px; }
+    .document p, .document ul, .document ol, .document blockquote, .document pre, .document table { margin: 0 0 18px; }
+    .document li + li { margin-top: 6px; }
+    .document blockquote { padding-left: 16px; border-left: 3px solid var(--accent); color: #b5b5b5; }
+    .document code { padding: 2px 5px; border-radius: 4px; background: #2c2c2c; font: .9em ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .document pre { padding: 16px; border: 1px solid var(--border); border-radius: 6px; overflow: auto; background: #181818; }
+    .document pre code { padding: 0; background: none; }
+    .document table { width: 100%; border-collapse: collapse; }
+    .document th, .document td { padding: 7px 9px; border: 1px solid var(--border); text-align: left; }
+    .meta { margin-bottom: 32px; color: var(--muted); font-size: 12px; }
+    .badge { display: inline-block; margin-right: 5px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
+    .badge.external { color: #dbbd7b; border-color: #6b5935; }
+    .badge.conflict { color: var(--danger); border-color: #704343; }
+    .citations { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); color: #aaa; font-size: 12px; }
+    .citations h2 { margin-top: 0; font-size: 15px; }
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #737373;
+      font-size: 14px;
+      letter-spacing: .01em;
+    }
+    .source-layout { height: 100%; display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+    .source-index { padding: 10px 8px; border-right: 1px solid var(--border); background: var(--background-secondary); overflow: auto; }
+    .source-button { align-items: flex-start; flex-direction: column; gap: 0; }
+    .source-button small { color: var(--faint); }
+    .source-document { overflow: auto; }
+    .markdown { white-space: pre-wrap; overflow-wrap: anywhere; color: #b8b8b8; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .session-callout { margin-top: 28px; padding: 12px 14px; border-left: 3px solid var(--accent); background: #27252f; color: #c9c5e4; }
+    .data-error { position: fixed; z-index: 20; top: 50px; right: 12px; max-width: 360px; padding: 10px 12px; border: 1px solid #704343; border-radius: 6px; color: #efb0b0; background: #382424; }
+
+    @media (max-width: 760px) {
+      .app { display: block; }
+      .sidebar { position: fixed; z-index: 10; inset: 0 auto 0 0; width: min(290px, 86vw); transform: translateX(-100%); transition: transform .16s ease; box-shadow: 12px 0 34px #0008; }
+      .sidebar.open { transform: translateX(0); }
+      .workspace { height: 100%; }
+      .menu { display: inline-grid; place-items: center; }
+      .source-layout { grid-template-columns: 1fr; }
+      .source-index { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--border); }
+      .document { width: min(100% - 32px, 760px); padding-top: 38px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Learning workspace">
+      <div class="vault"><svg class="vault-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 3 7v10l9 5 9-5V7Zm0 2.3 6.8 3.8L12 12 5.2 8.1Zm-7 5.5 6 3.4v6L5 15.8Zm8 9.4v-6l6-3.4v6Z"/></svg><span class="vault-name" id="vault-name">LEARN</span></div>
+      <nav class="nav" aria-label="Views">
+        <button class="nav-button" id="open-graph" type="button" aria-current="page"><span class="icon">◌</span>Graph</button>
+        <button class="nav-button" id="open-sources" type="button"><span class="icon">≡</span>Sources</button>
+        <button class="nav-button" id="open-session" type="button" hidden><span class="icon">?</span><span id="session-label">Session</span></button>
+      </nav>
+      <div class="tree">
+        <p class="tree-label">Workspace</p>
+        <div id="project-tree"></div>
+        <p class="tree-label">Notes</p>
+        <ul class="note-list" id="note-list"></ul>
+      </div>
+      <div class="sidebar-foot">Read only · use chat to learn or edit</div>
+    </aside>
+
+    <section class="workspace">
+      <header class="titlebar">
+        <button class="menu" id="menu" type="button" aria-label="Toggle sidebar">☰</button>
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <span class="status" id="status">synced</span>
+      </header>
+      <main class="panes">
+        <section class="pane graph-pane active" id="pane-graph" aria-label="Concept graph">
+          <div class="graph-stage" id="graph-stage">
+            <canvas id="graph-canvas" aria-label="Interactive concept graph. Use the Notes list for keyboard access."></canvas>
+            <div class="empty" id="graph-empty" hidden>Generate learning materials in chat.</div>
+            <div class="graph-key" id="graph-key">Scroll to zoom · drag to move · click a note to open</div>
+            <div class="graph-tools" aria-label="Graph controls">
+              <button class="tool-button" id="zoom-out" type="button" aria-label="Zoom out">−</button>
+              <button class="tool-button" id="reset-view" type="button" aria-label="Reset graph view">⌂</button>
+              <button class="tool-button" id="zoom-in" type="button" aria-label="Zoom in">+</button>
+            </div>
+          </div>
+        </section>
+        <section class="pane note-pane" id="pane-note"><article class="document" id="note"></article><div class="empty" id="note-empty" hidden>Generate learning materials in chat.</div></section>
+        <section class="pane source-pane" id="pane-sources"><div class="source-layout"><ul class="source-list source-index" id="source-list"></ul><article class="source-document"><div class="document" id="source"></div></article></div></section>
+        <section class="pane session-pane" id="pane-session"><article class="document" id="session"></article></section>
+      </main>
+    </section>
+  </div>
+  <div class="data-error" id="data-error" role="alert" hidden>The rendered workspace data is invalid.</div>
+
+  <script type="application/json" id="learn-data">__LEARN_DATA__</script>
+  <script>
+    (() => {
+      const fallback = { workspace: { name: "LEARN", projects: [] }, current: {}, topic: {}, graph: { nodes: [], edges: [] }, knownSet: [], sources: [], artifacts: [] };
+      let data = fallback;
+      try { data = JSON.parse(document.getElementById("learn-data").textContent); }
+      catch (error) { document.getElementById("data-error").hidden = false; console.error(error); }
+
+      const $ = (selector, root = document) => root.querySelector(selector);
+      const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+      const text = value => value == null ? "" : String(value);
+      const safeHref = value => /^(#|\.\.?\/)/.test(text(value).trim()) ? text(value).trim() : "#";
+      const safeExternal = value => { try { const url = new URL(text(value)); return url.protocol === "https:" && !url.username && !url.password ? url.href : "#"; } catch { return "#"; } };
+      const topic = data.topic || {};
+      const session = data.session || {};
+      const graph = session.active && session.proposedGraph ? session.proposedGraph : (data.graph || { nodes: [], edges: [] });
+      const known = new Set(session.active && Array.isArray(session.proposedKnownSet) ? session.proposedKnownSet : (data.knownSet || []));
+      const parents = new Map((graph.nodes || []).map(node => [node.id, []]));
+      (graph.edges || []).forEach(edge => parents.get(edge.to)?.push(edge.from));
+      const frontier = new Set((graph.nodes || []).filter(node => !known.has(node.id) && (parents.get(node.id) || []).every(id => known.has(id))).map(node => node.id));
+      const nodes = (graph.nodes || []).map(node => ({ ...node, state: known.has(node.id) ? "known" : frontier.has(node.id) ? "frontier" : "unknown" }));
+      const edges = graph.edges || [];
+      const sources = data.sources || [];
+      const artifacts = data.artifacts || [];
+      const byNode = new Map(nodes.map(node => [node.id, node]));
+      const bySource = new Map(sources.map(source => [source.id, source]));
+      const artifactFor = id => artifacts.find(artifact => artifact.conceptId === id);
+
+      function sanitize(fragment) {
+        const template = document.createElement("template");
+        template.innerHTML = text(fragment);
+        const blocked = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "FORM", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "LINK", "META", "SVG", "MATH", "IMG", "VIDEO", "AUDIO"]);
+        const allowed = new Set(["P", "H2", "H3", "H4", "UL", "OL", "LI", "STRONG", "EM", "CODE", "PRE", "BLOCKQUOTE", "A", "HR", "BR", "DIV", "SECTION", "ASIDE", "SPAN", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "SUP", "SUB", "DL", "DT", "DD", "DETAILS", "SUMMARY"]);
+        const safeClasses = new Set(["content-note", "content-label", "external", "conflict", "canonical"]);
+        [...template.content.querySelectorAll("*")].forEach(node => {
+          if (blocked.has(node.tagName)) { node.remove(); return; }
+          if (!allowed.has(node.tagName)) { node.replaceWith(...node.childNodes); return; }
+          const href = node.tagName === "A" ? text(node.getAttribute("href")).trim() : "";
+          const classes = [...node.classList].filter(name => safeClasses.has(name));
+          [...node.attributes].forEach(attribute => node.removeAttribute(attribute.name));
+          if (classes.length) node.className = classes.join(" ");
+          if (node.tagName === "A") {
+            const safe = href.startsWith("#") ? href : safeExternal(href);
+            node.setAttribute("href", safe);
+            if (safe.startsWith("https://")) { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer"); }
+          }
+        });
+        return template.content;
+      }
+
+      function setPane(name) {
+        $$(".pane").forEach(pane => pane.classList.toggle("active", pane.id === `pane-${name}`));
+        $$(".nav-button").forEach(button => button.removeAttribute("aria-current"));
+        const active = name === "graph" ? $("#open-graph") : name === "sources" ? $("#open-sources") : name === "session" ? $("#open-session") : null;
+        active?.setAttribute("aria-current", "page");
+        $("#sidebar").classList.remove("open");
+        if (name === "graph") resizeCanvas();
+      }
+
+      function renderWorkspace() {
+        $("#vault-name").textContent = data.workspace?.name || "LEARN";
+        const tree = $("#project-tree");
+        (data.workspace?.projects || []).forEach(project => {
+          const details = document.createElement("details");
+          details.className = "project";
+          details.open = project.id === data.current?.projectId;
+          const summary = document.createElement("summary");
+          summary.textContent = project.name;
+          const list = document.createElement("ul");
+          list.className = "topic-list";
+          (project.topics || []).forEach(item => {
+            const li = document.createElement("li");
+            const link = document.createElement("a");
+            link.className = "topic-link" + (item.active ? " current" : "");
+            link.href = safeHref(item.href);
+            link.textContent = item.name;
+            li.append(link); list.append(li);
+          });
+          details.append(summary, list); tree.append(details);
+        });
+
+        const notes = $("#note-list");
+        nodes.slice().sort((a, b) => a.label.localeCompare(b.label)).forEach(node => {
+          const li = document.createElement("li");
+          const button = document.createElement("button");
+          button.className = "note-button";
+          button.type = "button";
+          const dot = document.createElement("span");
+          dot.className = `note-dot ${node.state}`;
+          button.append(dot, document.createTextNode(node.label));
+          button.addEventListener("click", () => openNote(node.id));
+          li.append(button); notes.append(li);
+        });
+
+        const project = data.workspace?.projects?.find(item => item.id === data.current?.projectId);
+        [data.workspace?.name, project?.name, topic.title].filter(Boolean).forEach((part, index, all) => {
+          const element = document.createElement(index === all.length - 1 ? "strong" : "span");
+          element.textContent = part;
+          $("#breadcrumb").append(element);
+          if (index < all.length - 1) $("#breadcrumb").append(document.createTextNode("  ›  "));
+        });
+        const pending = Boolean(topic.graphReconciliationRequired || session.active);
+        $("#status").textContent = pending ? (session.active ? "preview" : "review needed") : "synced";
+        $("#status").classList.toggle("pending", pending);
+      }
+
+      function renderArtifact(artifact) {
+        const host = $("#note");
+        host.replaceChildren();
+        const heading = document.createElement("h1");
+        heading.textContent = artifact.title;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        (artifact.labels || ["canonical"]).forEach(label => {
+          const badge = document.createElement("span");
+          badge.className = `badge ${label}`;
+          badge.textContent = label;
+          meta.append(badge);
+        });
+        if (artifact.summary) meta.append(document.createTextNode(` ${artifact.summary}`));
+        host.append(heading, meta, sanitize(artifact.html || ""));
+        if (artifact.citations?.length) {
+          const citations = document.createElement("section");
+          citations.className = "citations";
+          citations.innerHTML = "<h2>References</h2><ol></ol>";
+          artifact.citations.forEach(citation => {
+            const li = document.createElement("li");
+            const label = bySource.get(citation.sourceId)?.title || citation.label || citation.sourceId || "Source";
+            if (citation.href) {
+              const link = document.createElement("a"); link.href = safeExternal(citation.href); link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = label; li.append(link);
+            } else li.append(document.createTextNode(label));
+            const detail = [citation.locator, citation.note].filter(Boolean).join(" · ");
+            if (detail) li.append(document.createTextNode(` — ${detail}`));
+            $("ol", citations).append(li);
+          });
+          host.append(citations);
+        }
+      }
+
+      function openNote(id) {
+        $$(".note-button").forEach(button => button.removeAttribute("aria-current"));
+        const ordered = nodes.slice().sort((a, b) => a.label.localeCompare(b.label));
+        const index = ordered.findIndex(node => node.id === id);
+        if (index >= 0) $$(".note-button")[index]?.setAttribute("aria-current", "page");
+        const artifact = artifactFor(id);
+        $("#note").hidden = !artifact;
+        $("#note-empty").hidden = Boolean(artifact);
+        if (artifact) renderArtifact(artifact);
+        setPane("note");
+      }
+
+      function renderSources() {
+        const list = $("#source-list");
+        sources.forEach((source, index) => {
+          const li = document.createElement("li");
+          const button = document.createElement("button");
+          button.className = "source-button";
+          button.type = "button";
+          const strong = document.createElement("strong"); strong.textContent = source.title;
+          const small = document.createElement("small"); small.textContent = [source.type, source.author].filter(Boolean).join(" · ");
+          button.append(strong, small);
+          button.addEventListener("click", () => showSource(source.id));
+          li.append(button); list.append(li);
+          if (!index) showSource(source.id);
+        });
+        if (!sources.length) $("#source").innerHTML = '<div class="empty">No canonical sources.</div>';
+      }
+
+      function showSource(id) {
+        const source = sources.find(item => item.id === id);
+        if (!source) return;
+        $$(".source-button").forEach((button, index) => button.setAttribute("aria-current", sources[index]?.id === id ? "page" : "false"));
+        const host = $("#source");
+        host.replaceChildren();
+        const title = document.createElement("h1"); title.textContent = source.title;
+        const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = [source.author, source.locator, source.addedAt].filter(Boolean).join(" · ");
+        const pre = document.createElement("pre"); pre.className = "markdown"; pre.textContent = source.markdown || "";
+        host.append(title, meta, pre);
+      }
+
+      function renderSession() {
+        if (!session.active) return;
+        $("#open-session").hidden = false;
+        const names = { quiz: "Quiz", "boundary-proposal": "Boundary proposal", "revision-result": "Revision result", "graph-proposal": "Graph proposal", answer: "Answer" };
+        $("#session-label").textContent = names[session.kind] || "Session";
+        const host = $("#session");
+        const title = document.createElement("h1"); title.textContent = session.question || session.title || names[session.kind] || "Session";
+        host.append(title);
+        if (session.context) { const context = document.createElement("p"); context.className = "meta"; context.textContent = session.context; host.append(context); }
+        if (session.html) host.append(sanitize(session.html));
+        const callout = document.createElement("div"); callout.className = "session-callout"; callout.textContent = session.prompt || "Continue in chat."; host.append(callout);
+      }
+
+      const canvas = $("#graph-canvas");
+      const context = canvas.getContext("2d");
+      let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null;
+      const degree = new Map(nodes.map(node => [node.id, 0]));
+      edges.forEach(edge => { degree.set(edge.from, (degree.get(edge.from) || 0) + 1); degree.set(edge.to, (degree.get(edge.to) || 0) + 1); });
+      const points = nodes.map((node, index) => {
+        let hash = 2166136261;
+        for (const char of node.id) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+        const angle = index * 2.399963 + (hash >>> 0) / 4294967296;
+        const radius = 45 + 22 * Math.sqrt(index);
+        return { ...node, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0, radius: 4 + Math.min(4, (degree.get(node.id) || 0) * .65) };
+      });
+      const byPoint = new Map(points.map(point => [point.id, point]));
+
+      function settleGraph() {
+        // ponytail: pairwise repulsion is simplest; use Barnes-Hut if topics grow past a few hundred concepts.
+        for (let step = 0; step < 260; step++) {
+          for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+            const a = points[i], b = points[j], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
+            const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
+            a.vx -= dx * force; a.vy -= dy * force; b.vx += dx * force; b.vy += dy * force;
+          }
+          edges.forEach(edge => {
+            const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
+            const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1, force = (distance - 112) * .012;
+            a.vx += dx / distance * force; a.vy += dy / distance * force; b.vx -= dx / distance * force; b.vy -= dy / distance * force;
+          });
+          points.forEach(point => { point.vx -= point.x * .0025; point.vy -= point.y * .0025; point.vx *= .78; point.vy *= .78; point.x += point.vx; point.y += point.vy; });
+        }
+      }
+
+      function screen(point) { return { x: width / 2 + (point.x + panX) * scale, y: height / 2 + (point.y + panY) * scale }; }
+      function nodeAt(x, y) {
+        for (let i = points.length - 1; i >= 0; i--) { const position = screen(points[i]); if (Math.hypot(x - position.x, y - position.y) <= Math.max(10, points[i].radius * scale + 5)) return points[i]; }
+      }
+      function related(id, edge) { return !id || edge.from === id || edge.to === id; }
+
+      function drawGraph() {
+        context.clearRect(0, 0, width, height);
+        context.lineWidth = 1;
+        edges.forEach(edge => {
+          const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
+          const from = screen(a), to = screen(b);
+          context.strokeStyle = hoverId && !related(hoverId, edge) ? "#343434" : "#555";
+          context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+        });
+        points.forEach(point => {
+          const position = screen(point), connected = !hoverId || point.id === hoverId || edges.some(edge => related(hoverId, edge) && (edge.from === point.id || edge.to === point.id));
+          context.globalAlpha = connected ? 1 : .22;
+          context.fillStyle = point.state === "known" ? "#8b7cf6" : point.state === "frontier" ? "#c4a7ff" : "#a0a0a0";
+          if (point.id === hoverId) { context.shadowColor = "#b7adff"; context.shadowBlur = 12; }
+          context.beginPath(); context.arc(position.x, position.y, Math.max(2.5, point.radius * Math.sqrt(scale)), 0, Math.PI * 2); context.fill();
+          context.shadowBlur = 0;
+          if (scale > .42 || point.id === hoverId) {
+            context.font = `${point.id === hoverId ? 600 : 400} ${Math.max(10, Math.min(14, 11 * Math.sqrt(scale)))}px Inter, sans-serif`;
+            context.fillStyle = point.id === hoverId ? "#f1f1f1" : "#bcbcbc";
+            context.fillText(point.label, position.x + 9, position.y + 4);
+          }
+        });
+        context.globalAlpha = 1;
+      }
+
+      function resetView() {
+        if (!points.length) return;
+        const xs = points.map(point => point.x), ys = points.map(point => point.y);
+        const spanX = Math.max(...xs) - Math.min(...xs) + 180, spanY = Math.max(...ys) - Math.min(...ys) + 140;
+        scale = Math.max(.45, Math.min(1.35, width / spanX, height / spanY));
+        panX = -(Math.max(...xs) + Math.min(...xs)) / 2; panY = -(Math.max(...ys) + Math.min(...ys)) / 2;
+        drawGraph();
+      }
+
+      function resizeCanvas() {
+        const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return;
+        const ratio = Math.min(2, window.devicePixelRatio || 1);
+        width = bounds.width; height = bounds.height; canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+        context.setTransform(ratio, 0, 0, ratio, 0, 0); drawGraph();
+      }
+
+      canvas.addEventListener("pointerdown", event => {
+        const node = nodeAt(event.offsetX, event.offsetY);
+        drag = { node, x: event.clientX, y: event.clientY, panX, panY, moved: false };
+        canvas.setPointerCapture(event.pointerId); canvas.classList.add("dragging");
+      });
+      canvas.addEventListener("pointermove", event => {
+        if (!drag) { hoverId = nodeAt(event.offsetX, event.offsetY)?.id || null; canvas.style.cursor = hoverId ? "pointer" : "grab"; drawGraph(); return; }
+        const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.moved ||= Math.hypot(dx, dy) > 4;
+        if (drag.node) { drag.node.x += dx / scale; drag.node.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; }
+        else { panX = drag.panX + dx / scale; panY = drag.panY + dy / scale; }
+        drawGraph();
+      });
+      canvas.addEventListener("pointerup", event => {
+        if (drag?.node && !drag.moved) openNote(drag.node.id);
+        drag = null; canvas.releasePointerCapture(event.pointerId); canvas.classList.remove("dragging");
+      });
+      canvas.addEventListener("pointerleave", () => { if (!drag) { hoverId = null; drawGraph(); } });
+      canvas.addEventListener("wheel", event => {
+        event.preventDefault();
+        const beforeX = (event.offsetX - width / 2) / scale - panX, beforeY = (event.offsetY - height / 2) / scale - panY;
+        scale = Math.max(.25, Math.min(4, scale * Math.exp(-event.deltaY * .001)));
+        panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph();
+      }, { passive: false });
+
+      settleGraph();
+      renderWorkspace(); renderSources(); renderSession();
+      $("#graph-empty").hidden = Boolean(nodes.length);
+      $("#graph-key").hidden = !nodes.length; $(".graph-tools").hidden = !nodes.length;
+      $("#open-graph").addEventListener("click", () => setPane("graph"));
+      $("#open-sources").addEventListener("click", () => setPane("sources"));
+      $("#open-session").addEventListener("click", () => setPane("session"));
+      $("#menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+      $("#zoom-in").addEventListener("click", () => { scale = Math.min(4, scale * 1.2); drawGraph(); });
+      $("#zoom-out").addEventListener("click", () => { scale = Math.max(.25, scale / 1.2); drawGraph(); });
+      $("#reset-view").addEventListener("click", resetView);
+      window.addEventListener("resize", resizeCanvas);
+      requestAnimationFrame(() => { resizeCanvas(); resetView(); });
+    })();
+  </script>
+</body>
+</html>
