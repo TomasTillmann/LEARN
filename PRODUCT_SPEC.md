@@ -2,7 +2,7 @@
 
 This document is the authoritative behavioral specification for the **LEARN** skill. It is written for agents operating inside a workspace or project directory.
 
-The product is a source-grounded learning workspace implemented as an agent-native skill. The learner controls it entirely through chat. The agent teaches through a read-only HTML workspace generated from a mutable knowledge bank.
+The product is a source-grounded learning workspace implemented as an agent-native skill. The learner controls it entirely through chat. Quizzes run entirely in chat; lessons and other learning output appear in a read-only HTML workspace generated from a mutable knowledge bank.
 
 ## 1. Product promise
 
@@ -51,13 +51,13 @@ All canonical teaching content, concepts, prerequisite relationships, and quiz q
 
 The agent must never use an existing learning artifact as factual input. Whenever it teaches, answers, assesses, or updates the graph, it reads the current knowledge bank.
 
-### 3.2 Chat controls; HTML presents
+### 3.2 Chat controls and quizzes; HTML presents learning material
 
-- **All input and control happen in chat.** Commands, answers, approvals, corrections, and knowledge declarations come through chat.
-- **All substantive output goes to HTML.** Lessons, answers, quiz questions, concept views, citations, and source comparisons are published there.
+- **All input, control, and quizzes happen in chat.** Commands, answers, approvals, corrections, knowledge declarations, quiz questions, evaluations, and quiz results stay in chat.
+- **Other substantive output goes to HTML.** Lessons, grounded answers, concept views, citations, and source comparisons are published there.
 - The persistence folder is the single source of truth. The fixed renderer reads and validates that semantic state, then produces the complete read-only UI as disposable output.
 - Agents never author the application shell, navigation, graph drawing, graph positions, empty states, or visual styling. They persist JSON, canonical Markdown, and semantic artifact fragments only.
-- Chat contains only concise operational communication: what the agent is doing, what approval is required, and what changed. Every response ends with a contextual numbered list of actions the learner can take next.
+- Outside quizzes, chat contains only concise operational communication: what the agent is doing, what approval is required, and what changed. Those responses end with a contextual numbered list of actions the learner can take next.
 - HTML is read-only. It never sends commands or answers and never persists learner input.
 
 ### 3.3 Learner authority
@@ -160,7 +160,7 @@ Artifacts are disposable presentation output, not authoritative state. They may 
 
 ### Quiz sessions
 
-A quiz session may temporarily contain current questions, learner answers, working judgments, and progress. None of that is persisted. Only a learner-approved final known-set change may be saved.
+A quiz is a simple turn-by-turn chat exchange. The agent asks exactly one question, waits for the learner's answer, then briefly evaluates it and asks the next question when useful. Questions, answers, working judgments, and progress are not persisted. Only a learner-approved final known-set change may be saved.
 
 An interrupted quiz has no durable partial state and may be restarted.
 
@@ -285,20 +285,20 @@ For the selected concept, the session manager:
 
 The boundary finder establishes or reassesses the known set. The learner may request it at any time; knowledge-bank changes do not force it automatically.
 
-The session manager always spawns a fresh boundary-quiz sub-agent for the complete quiz. It forwards each chat answer to that same sub-agent, publishes its next question to HTML, and ends the sub-agent when the quiz is approved or abandoned.
+The session manager always spawns a fresh boundary-quiz sub-agent for the complete quiz. It forwards each chat answer to that same sub-agent, relays one next question at a time in chat, and ends the sub-agent when the quiz is approved or abandoned.
 
 A knowledge-bank mutation abandons the active boundary quiz before the mutation is applied. Its progress is discarded; reassessment starts later as a new quiz with a fresh sub-agent.
 
 The quiz is adaptive and binary-search-like, not a literal ordered binary search:
 
 1. Choose a concept whose answer will best reduce uncertainty about the known set.
-2. Publish one grounded question in HTML.
+2. Ask one grounded question in chat and wait for the learner's answer.
 3. Receive the learner's answer in chat.
-4. Evaluate it reasonably and with useful detail, without pedantry.
-5. Choose the next question from the graph, prior question, and answer.
+4. Evaluate it briefly and reasonably, without pedantry.
+5. Choose and ask exactly one next question from the graph, prior question, and answer.
 6. Prefer one or two additional checks when useful, but stop when the result is sufficiently clear.
 
-At completion, the agent shows a proposed prerequisite-consistent known set in HTML. The learner may:
+At completion, the agent shows a concise proposed prerequisite-consistent known set in chat. The learner may:
 
 - approve it;
 - correct it directly;
@@ -322,7 +322,7 @@ A knowledge-bank mutation abandons the active revision quiz before the mutation 
 The outcome is a proposal:
 
 - **Understood:** propose marking the concept and its prerequisites understood.
-- **Gap remains:** explain the gap in HTML, add appropriate learning material, and propose leaving or marking the concept and its dependents not understood.
+- **Gap remains:** explain the gap briefly in chat, add appropriate learning material in HTML, and propose leaving or marking the concept and its dependents not understood.
 
 The learner approves, corrects, continues learning, or directly declares the result. Only the final known-set change persists.
 
@@ -367,7 +367,7 @@ In a few sentences, state what is being done and mention whether persistent stat
 
 Always tell the learner what was persisted, including automatic graph or known-set consequences. Keep this short but specific.
 
-Every learner-facing response ends with a contextual numbered list of available actions, such as learning a new concept, revising one, taking a knowledge-boundary quiz, asking a grounded question, or changing sources.
+Every learner-facing response outside an active quiz ends with a contextual numbered list of available actions, such as learning a new concept, revising one, taking a knowledge-boundary quiz, asking a grounded question, or changing sources. During a quiz, each turn contains only a brief evaluation when applicable and exactly one question, then waits for the learner's answer.
 
 When an HTML result or proposal is ready, its clickable link comes first. A graph-proposal message then gives one direct sentence followed by its numbered actions; it does not repeat source or topic background already visible in the proposal.
 
@@ -393,7 +393,6 @@ HTML may display:
 - the current learning frontier;
 - learning artifacts;
 - citations, provenance, and source disagreements;
-- the current ephemeral quiz question and progress, when a quiz is active.
 
 HTML must never:
 
@@ -406,7 +405,7 @@ HTML must never:
 
 Navigation or other local display controls may exist, but their effects are presentation-only and are never sent to chat or persisted.
 
-Durable HTML files may contain the workspace and learning artifacts. Ephemeral quiz questions, progress, and unapproved proposals must be projected from live session context without becoming durable topic content. If a temporary HTML file is needed for display, it is session-scoped and removed when the quiz or proposal ends or is abandoned.
+Durable HTML files may contain the workspace and learning artifacts. Quiz questions, progress, results, and approval stay in chat and never become HTML or durable topic content. Temporary HTML for other unapproved proposals remains session-scoped and is removed when the proposal ends or is abandoned.
 
 ## 14. Persistent and ephemeral state
 
@@ -457,7 +456,7 @@ LEARN/
 - **Learning-artifact sub-agent:** a fresh specialist spawned for each creation or extension of a learning artifact.
 - **Knowledge bank:** canonical topic Markdown and provenance; the sole canonical factual source.
 - **Topic state:** current concept graph and binary known set; the sole learner-state source.
-- **HTML workspace:** read-only projection containing all substantive output.
+- **HTML workspace:** read-only projection containing learning material and other non-quiz substantive output.
 
 The directory names may be adjusted to the host skill convention, but the boundary must remain: a thin skill entry point, shared rules, focused use-case prompts, one session manager, fresh task specialists, and only the smallest necessary deterministic helpers.
 
@@ -503,7 +502,7 @@ skinparam packageStyle rectangle
 actor Learner
 cloud "Learner-provided sources\nbooks · chapters · blogs\nvideos · URLs" as Sources
 cloud "Internet\nquestion-specific research" as Web
-rectangle "Workspace chat\nONLY INPUT / CONTROL SURFACE" as Chat
+rectangle "Workspace chat\nINPUT · CONTROL · QUIZZES" as Chat
 
 package "LEARN skill" {
   artifact "SKILL.md\n\nThin activation and policy entry point" as Skill
@@ -517,12 +516,12 @@ package "LEARN skill" {
 
 folder "Knowledge Bank\nCanonical Markdown + provenance\nSOLE CANONICAL FACTUAL SOURCE" as Bank
 database "Topic State\nConcept graph + binary known set\nGraph readiness\nSOLE LEARNER-STATE SOURCE" as State
-artifact "Read-only HTML Workspace\nAll substantive output\nNo input path" as HTML
+artifact "Read-only HTML Workspace\nLessons and non-quiz output\nNo input path" as HTML
 collections "Current quiz context\nEPHEMERAL — never written" as Quiz
 
 Learner --> Chat : commands, approvals, questions, answers
 Chat --> Session : learner input
-Session --> Chat : brief status, proposals, change notices
+Session --> Chat : status, quiz turns, proposals,\nand change notices
 Learner --> HTML : browse at any time
 
 Session --> Skill : activate and follow
@@ -536,7 +535,7 @@ Prompt --> QuizAgent : quiz instructions
 Prompt --> ArtifactAgent : teaching instructions
 QuizAgent --> Session : question, evaluation,\nor proposed known-set result
 ArtifactAgent --> Session : concise grounded HTML content
-Quiz --> HTML : temporary projection only
+Quiz --> Chat : one question at a time
 
 Sources --> Session : learner-authorized source content
 Web --> Session : question-specific evidence\nONLY after learner permits search
@@ -619,7 +618,7 @@ legend
 |= Color |= Meaning |
 |<#F2F4F7>| Chat input, approval, or brief status |
 |<#EAF2FF>| Substantive output written to HTML |
-|<#FFF4CC>| Ephemeral quiz activity — never persisted |
+|<#FFF4CC>| Quiz turn in chat — never persisted |
 |<#E8F7EC>| Persistent topic-state change |
 endlegend
 
@@ -641,18 +640,17 @@ repeat
       :Session manager spawns a fresh Boundary Quiz Agent;
       repeat
         #FFF4CC:Choose an informative concept from the graph and prior answers;
-        #EAF2FF:Publish the next grounded question to HTML;
+        #FFF4CC:Ask exactly one grounded question in chat;
         #F2F4F7:Learner answers in chat;
-        #FFF4CC:Evaluate reasonably and adapt;
+        #FFF4CC:Evaluate briefly and adapt;
       repeat while (More evidence useful?) is (yes)
-      #EAF2FF:Show the proposed binary known set in HTML;
+      #FFF4CC:Show the proposed binary known set in chat;
       #F2F4F7:Learner approves, corrects, or requests more questions;
       while (More questions requested?) is (yes)
-        #FFF4CC:Generate another adaptive grounded question;
-        #EAF2FF:Publish the question to HTML;
+        #FFF4CC:Ask exactly one adaptive grounded question in chat;
         #F2F4F7:Learner answers in chat;
         #FFF4CC:Update the ephemeral assessment;
-        #EAF2FF:Refresh the proposed known set in HTML;
+        #FFF4CC:Refresh the proposed known set in chat;
       endwhile (no)
       #E8F7EC:Persist only the learner-approved consistent known set;
       :End and discard the Boundary Quiz Agent;
@@ -669,11 +667,12 @@ repeat
       :End the Learning Artifact Agent;
       if (Learner requests revision quiz?) then (yes)
         :Session manager spawns a fresh Revision Quiz Agent;
-        #FFF4CC:Generate reasonable source-grounded questions;
-        #EAF2FF:Publish each question to HTML;
-        #F2F4F7:Learner answers each question in chat;
-        #FFF4CC:Evaluate without percentages or pedantry;
-        #EAF2FF:Show the result and gaps in HTML;
+        repeat
+          #FFF4CC:Ask exactly one source-grounded question in chat;
+          #F2F4F7:Learner answers in chat;
+          #FFF4CC:Evaluate briefly without percentages or pedantry;
+        repeat while (More evidence useful?) is (yes)
+        #FFF4CC:Show the result and gaps in chat;
         #F2F4F7:Learner approves, corrects, or continues learning;
         #E8F7EC:Persist only the learner-approved consistent result;
         :End and discard the Revision Quiz Agent;
@@ -803,12 +802,10 @@ rectangle "READ-ONLY HTML UI\nAlways available; browsing never changes chat stat
   card "Inspect the knowledge bank\nSources and canonical Markdown" as KnowledgeBank
   card "Inspect current knowledge\nConcept graph · prerequisites\nknown set · learning frontier" as Knowledge
   card "Read learning output\nArtifacts · citations · provenance\nsource disagreements" as Artifacts
-  card "Follow an active quiz\nCurrent question and ephemeral progress" as Quiz
 
   Navigate -[hidden]down-> KnowledgeBank
   KnowledgeBank -[hidden]down-> Knowledge
   Knowledge -[hidden]down-> Artifacts
-  Artifacts -[hidden]down-> Quiz
 }
 
 rectangle "NEVER ALLOWED IN HTML\n\nSend answers or commands\nStart quizzes, learning, or updates\nModify sources, graph, known set, or artifacts\nManage projects or topics\nPersist local edits or send them to chat" as Forbidden #FEF2F2
@@ -842,7 +839,7 @@ An implementation conforms only if all of these remain true:
 10. The boundary finder is available on request but is not forced after every change.
 11. Quiz contents and progress are never persisted; a bank mutation cancels an active quiz and discards its uncommitted work.
 12. Chat is the only input/control surface.
-13. All substantive teaching, answers, and quiz questions are published to HTML.
+13. Every quiz runs entirely in chat, one question and one learner answer at a time; lessons and other substantive learning output are published to HTML.
 14. HTML remains read-only and browsing it never changes chat state.
 15. Agent-proposed persistence waits for approval; exact learner commands count as approval, including deletion of a clearly identified target; ambiguous and agent-proposed deletion asks first.
 16. The agent obtains permission before searching the internet unless the learner directly requested the search.
@@ -860,7 +857,7 @@ An implementation conforms only if all of these remain true:
 28. Existing tools and plain files are preferred over new services, frameworks, or infrastructure.
 29. Source conversion uses the specified v1 converter by format, preserves source content mechanically, records complete provenance, and cannot mutate the bank or graph on failure.
 30. Activation starts or reuses the localhost workspace server and gives the learner its clickable address.
-31. Every learner-facing response ends with a contextual numbered list of next actions.
+31. Every learner-facing response outside an active quiz ends with a contextual numbered list of next actions.
 32. Every graph proposal uses a fresh graph specialist.
 33. Graph approval never generates learning artifacts; concept artifacts are created on explicit learner request.
 
@@ -921,16 +918,17 @@ It is responsible for:
 - interpreting learner intent;
 - reading the current knowledge bank, graph, and known set;
 - giving concise chat status messages;
+- relaying each quiz as one question, one learner answer, then the next question in chat;
 - requesting required permissions and approvals;
 - deciding which specialist task is needed;
 - spawning and briefing specialist sub-agents;
 - passing quiz answers from chat to the active quiz sub-agent;
 - cancelling an active quiz and discarding its uncommitted context before any knowledge-bank mutation;
-- publishing specialist output to HTML;
+- publishing non-quiz specialist output to HTML;
 - applying only authorized persistent mutations;
 - recording and enforcing graph-reconciliation-required state after a bank mutation when necessary;
 - reporting every completed persistent change;
-- ending every learner-facing response with a contextual numbered action list;
+- ending every learner-facing response outside an active quiz with a contextual numbered action list;
 - ending disposable sub-agents when their task is complete.
 
 The session manager coordinates. It should not duplicate the specialist's artifact design or quiz reasoning after delegation.
@@ -955,7 +953,7 @@ The quiz sub-agent:
 - never writes persistent state;
 - never communicates directly with the learner.
 
-The session manager publishes questions and substantive evaluations to HTML, receives answers in chat, and obtains approval for the final known-set proposal. When the quiz is approved, rejected without continuation, abandoned, or cancelled by a knowledge-bank mutation, the quiz sub-agent ends. Its working context is not persisted. Any later assessment is a new complete quiz with a fresh sub-agent.
+The session manager keeps the entire quiz in chat: it relays exactly one question, waits for the learner's answer, then gives the specialist's brief evaluation and relays exactly one next question when useful. It also presents the final result and obtains approval in chat. When the quiz is approved, rejected without continuation, abandoned, or cancelled by a knowledge-bank mutation, the quiz sub-agent ends. Its working context is not persisted. Any later assessment is a new complete quiz with a fresh sub-agent.
 
 #### Learning-artifact sub-agent
 
@@ -1011,7 +1009,7 @@ The shared contract must instruct every agent to:
 - show source disagreements explicitly and without bias;
 - label authorized internet material as external until separately promoted;
 - never use learning artifacts as factual input;
-- preserve the chat-input and HTML-output boundary;
+- preserve the boundary: quizzes entirely in chat, other substantive learning output in HTML;
 - keep persistent actions explicit and report completed mutations;
 - prefer direct, simple behavior over elaborate process.
 
@@ -1033,6 +1031,8 @@ For learning artifacts, the prompt must additionally require:
 For quiz work, the prompt must additionally require:
 
 - generate one grounded question at a time;
+- return plain text for relay in chat, never HTML;
+- wait for the learner's answer before producing another question;
 - use the graph and previous answers to choose the most informative next question;
 - assess understanding as binary rather than calculating a score;
 - ask enough to be confident while avoiding pedantic edge cases;
@@ -1062,13 +1062,13 @@ workspace/
 
 This is a simple default, not an invitation to create a storage abstraction. Use direct file reads and writes. Keep formats obvious enough that both an agent and a person can inspect them.
 
-Do not persist quiz questions, answers, intermediate judgments, spawned-agent context, unapproved proposals, or local HTML interaction state. Published external/noncanonical answer sections are ordinary persisted artifact output, not canonical knowledge. Temporary HTML used to display ephemeral session content must remain outside durable topic content and be removed when that context ends.
+Do not persist quiz questions, answers, intermediate judgments, spawned-agent context, unapproved proposals, or local HTML interaction state. Published external/noncanonical answer sections are ordinary persisted artifact output, not canonical knowledge. Quiz content stays in chat; temporary HTML used for other ephemeral session content must remain outside durable topic content and be removed when that context ends.
 
 ### 20.6 Implementation invariants
 
 1. The session manager is the only learner-facing agent.
 2. Activation starts or reuses a localhost workspace server and shares its clickable address.
-3. Every learner-facing response ends with a contextual numbered action list.
+3. Every learner-facing response outside an active quiz ends with a contextual numbered action list.
 4. Every concept-graph proposal uses a fresh graph sub-agent.
 5. Graph approval does not generate artifacts; an explicit learner request triggers one fresh artifact sub-agent per requested concept.
 6. Every knowledge-boundary quiz uses a fresh quiz sub-agent.
@@ -1083,3 +1083,4 @@ Do not persist quiz questions, answers, intermediate judgments, spawned-agent co
 15. A knowledge-bank mutation cancels any active quiz before changing the bank; no quiz context survives it.
 16. Graph-dependent work cannot use a graph marked as requiring reconciliation.
 17. Source conversion is staged, mechanical, and fail-closed; failure cannot mutate the bank or graph.
+18. Every quiz stays in chat and advances one question only after the learner answers the previous one.

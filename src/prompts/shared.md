@@ -27,10 +27,11 @@ The host agent supplies educational judgment; files and tools provide grounding,
 
 ## Chat and HTML boundary
 
-- Chat is the only input and control surface.
-- HTML is the substantive output surface for lessons, answers, explanations, comparisons, quizzes, evaluations, gaps, graph views, proposals, and citations.
+- Chat is the only input and control surface and the complete surface for quizzes.
+- Run every quiz turn in chat: ask exactly one question, wait for the learner's answer, then briefly evaluate it and ask the next question when useful. Keep quiz results and approval in chat too.
+- HTML is the substantive output surface for lessons, answers, explanations, comparisons, graph views, non-quiz proposals, and citations.
 - The fixed renderer alone creates the application shell and visual graph. Agents write validated JSON, canonical Markdown, and semantic artifact fragments; they never generate layout, navigation, graph coordinates, empty states, or styling.
-- Chat contains short operational messages and a numbered list of next actions, without duplicating substantive HTML.
+- Outside quizzes, chat contains short operational messages and a numbered list of next actions, without duplicating substantive HTML.
 - HTML is read-only and never mutates state or changes the chat flow.
 
 ## Learner authority and approvals
@@ -179,18 +180,14 @@ Before first renderer use and after editing it, run:
 node "<skill-root>/src/scripts/render-workspace.mjs" --check
 ```
 
-For temporary learner-facing work, create one unique OS temporary directory outside `<workspace-root>`. Write `<os-temp-dir>/session.json` using only this shape:
+For temporary learner-facing non-quiz work, create one unique OS temporary directory outside `<workspace-root>`. Write `<os-temp-dir>/session.json` using only this shape:
 
 ```json
 {
   "active": true,
-  "kind": "quiz",
-  "type": "boundary",
-  "current": 1,
-  "question": "Question text",
+  "kind": "graph-proposal",
   "title": "Optional title",
   "context": "Optional plain-text context",
-  "prompt": "Optional instruction to respond in chat",
   "html": "<section>Optional semantic HTML</section>",
   "proposedKnownSet": ["concept-id"],
   "proposedGraph": {
@@ -208,7 +205,7 @@ For temporary learner-facing work, create one unique OS temporary directory outs
 }
 ```
 
-`active` and `kind` are required. `kind` is `quiz`, `boundary-proposal`, `revision-result`, `graph-proposal`, or `answer`. A quiz requires `type`, `current`, and `question`; boundary and revision results require `proposedKnownSet`; a graph proposal requires `proposedGraph` and `proposedKnownSet`; an answer requires `html`. Omit irrelevant optional fields.
+`active` and `kind` are required. `kind` is `graph-proposal` or `answer`. A graph proposal requires `proposedGraph` and `proposedKnownSet`; an answer requires `html`. Omit irrelevant optional fields. Quiz questions, answers, evaluations, progress, and results stay in chat and never use session JSON or temporary HTML.
 
 Render a temporary session with:
 

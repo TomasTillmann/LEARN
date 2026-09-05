@@ -251,24 +251,14 @@ function inject(template, data) {
 function validateSession(session, loaded) {
   requireObject(session, "ephemeral session payload");
   if (session.active !== true) fail("ephemeral session payload must set active to true");
-  const kinds = new Set(["quiz", "boundary-proposal", "revision-result", "graph-proposal", "answer"]);
+  const kinds = new Set(["graph-proposal", "answer"]);
   if (!kinds.has(session.kind)) fail(`unknown ephemeral session kind: ${session.kind}`);
   if (session.html !== undefined && typeof session.html !== "string") fail("session html must be a string");
-  if (session.kind === "quiz") {
-    if (!new Set(["boundary", "revision"]).has(session.type)) fail("quiz type must be boundary or revision");
-    if (!Number.isInteger(session.current) || session.current < 1 || typeof session.question !== "string" || !session.question.trim()) fail("quiz requires a one-based current question number and question text");
-  }
-  const graphDependentKinds = new Set(["quiz", "boundary-proposal", "revision-result"]);
-  if (loaded.topic.graphReconciliationRequired && graphDependentKinds.has(session.kind)) {
-    fail(`${session.kind} is blocked while graph reconciliation is required`);
-  }
   if (session.proposedGraph !== undefined && session.kind !== "graph-proposal") fail("proposedGraph is valid only for graph-proposal");
-  if (session.proposedKnownSet !== undefined && !["boundary-proposal", "revision-result", "graph-proposal"].includes(session.kind)) {
+  if (session.proposedKnownSet !== undefined && session.kind !== "graph-proposal") {
     fail(`proposedKnownSet is not valid for ${session.kind}`);
   }
-  if (["boundary-proposal", "revision-result", "graph-proposal"].includes(session.kind) && !Array.isArray(session.proposedKnownSet)) {
-    fail(`${session.kind} requires proposedKnownSet`);
-  }
+  if (session.kind === "graph-proposal" && !Array.isArray(session.proposedKnownSet)) fail("graph-proposal requires proposedKnownSet");
   if (session.kind === "graph-proposal" && !session.proposedGraph) fail("graph-proposal requires proposedGraph");
   if (session.kind === "graph-proposal" && !loaded.topic.graphReconciliationRequired) fail("graph-proposal requires graph reconciliation to be pending");
   if (session.kind === "answer" && !(typeof session.html === "string" && session.html.trim())) fail("answer requires html");
@@ -278,8 +268,6 @@ function validateSession(session, loaded) {
   if (proposedGraph) {
     if (!Array.isArray(proposedGraph.nodes) || !Array.isArray(proposedGraph.edges)) fail("proposed graph must contain node and edge arrays");
     validateGraph(proposedGraph.nodes, proposedGraph.edges, proposedKnownSet, sourceIds);
-  } else if (session.proposedKnownSet) {
-    validateGraph(loaded.graph.nodes, loaded.graph.edges, proposedKnownSet, sourceIds);
   }
   if (session.sourceRefs !== undefined && !Array.isArray(session.sourceRefs)) fail("session sourceRefs must be an array");
   for (const ref of session.sourceRefs ?? []) {
@@ -443,10 +431,10 @@ async function check() {
   assert.throws(() => validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "lesson.html", labels: ["canonical"], citations: [{ sourceId: "s", locator: "§1", href: "https://example.com" }] }), /cannot contain href/);
   assert.throws(() => validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "lesson.html", labels: ["external"], citations: [{ label: "Local", href: "../secret" }] }), /absolute HTTPS/);
   const loaded = { topic: { graphReconciliationRequired: false }, sources: [{ id: "s" }], knownSet: ["a"], graph: { nodes, edges } };
-  validateSession({ active: true, kind: "quiz", type: "boundary", current: 1, question: "Why?", sourceRefs: [{ sourceId: "s", locator: "§1" }] }, loaded);
+  validateSession({ active: true, kind: "answer", html: "<p>Answer</p>", sourceRefs: [{ sourceId: "s", locator: "§1" }] }, loaded);
+  assert.throws(() => validateSession({ active: true, kind: "quiz", type: "boundary", current: 1, question: "Why?" }, loaded), /unknown ephemeral session kind/);
   assert.throws(() => validateSession({ active: true, kind: "graph-proposal", proposedKnownSet: [] }, loaded), /requires proposedGraph/);
   assert.throws(() => validateSession({ active: true, kind: "answer", html: "<p>Answer</p>", proposedKnownSet: [] }, loaded), /not valid/);
-  assert.throws(() => validateSession({ active: true, kind: "quiz", type: "boundary", current: 1, question: "Why?" }, { ...loaded, topic: { graphReconciliationRequired: true } }), /blocked/);
   assert.equal(inject("x__LEARN_DATA__y", { value: "</script>" }), "x{\"value\":\"\\u003c/script>\"}y");
   console.log("LEARN renderer checks passed");
 }

@@ -443,10 +443,10 @@
       function renderSession() {
         if (!session.active) return;
         $("#open-session").hidden = false;
-        const names = { quiz: "Quiz", "boundary-proposal": "Boundary proposal", "revision-result": "Revision result", "graph-proposal": "Graph proposal", answer: "Answer" };
+        const names = { "graph-proposal": "Graph proposal", answer: "Answer" };
         $("#session-label").textContent = names[session.kind] || "Session";
         const host = $("#session");
-        const title = document.createElement("h1"); title.textContent = session.question || session.title || names[session.kind] || "Session";
+        const title = document.createElement("h1"); title.textContent = session.title || names[session.kind] || "Session";
         host.append(title);
         if (session.context) { const context = document.createElement("p"); context.className = "meta"; context.textContent = session.context; host.append(context); }
         if (session.html) host.append(sanitize(session.html));

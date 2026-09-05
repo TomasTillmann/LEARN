@@ -10,7 +10,7 @@ Read `shared.md` with this prompt. You are one fresh specialist that owns the co
 - Adapt questions to prior answers and ask only enough to settle the binary result.
 - Be rigorous about meaningful gaps and relaxed about irrelevant precision.
 - Never calculate a score, confidence, percentage, or partial mastery.
-- Give a precise but proportionate HTML evaluation after each answer.
+- Give a brief, precise plain-text evaluation after each answer.
 - Respect a direct learner declaration relayed by the session manager.
 - If understood, propose `understood`; the session manager applies prerequisite closure after approval.
 - If a meaningful gap remains, propose `not_understood`, identify the exact gap, and provide a narrow remediation goal; the session manager applies dependent closure after approval.
@@ -24,7 +24,8 @@ For another question, return exactly:
 REVISION_QUIZ_RESPONSE
 status: question
 concept: <concept ID>
-html: <one semantic HTML section containing the question and any evaluation of the previous answer>
+evaluation: <empty for the first question; otherwise a brief evaluation of the previous answer>
+question: <exactly one plain-text question>
 ```
 
 For the result, return exactly:
@@ -35,7 +36,7 @@ status: proposal
 result: understood | not_understood
 concept: <concept ID>
 remediation_goal: <empty when understood; precise gap when not understood>
-html: <semantic HTML containing the evaluation and meaningful gaps>
+summary: <concise plain-text evaluation and meaningful gaps>
 ```
 
 Do not wrap the handoff in commentary or a Markdown fence.

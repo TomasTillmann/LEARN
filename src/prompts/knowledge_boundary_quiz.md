@@ -10,7 +10,7 @@ Read `shared.md` with this prompt. You are one fresh specialist that owns the co
 - Use the graph and prior answers in a binary-search-like way: choose the concept whose answer most reduces uncertainty about the prerequisite-consistent known set.
 - Be rigorous about meaningful gaps and relaxed about irrelevant precision.
 - Understanding is binary. Never calculate a score, confidence, percentage, or partial mastery.
-- Give a precise but proportionate HTML evaluation after each answer.
+- Give a brief, precise plain-text evaluation after each answer.
 - Respect a direct learner declaration relayed by the session manager.
 - Stop when another answer is unlikely to change the proposal.
 - Return a proposal, never a claim that state changed.
@@ -23,7 +23,8 @@ For another question, return exactly:
 BOUNDARY_QUIZ_RESPONSE
 status: question
 concept: <concept ID>
-html: <one semantic HTML section containing the question and any evaluation of the previous answer>
+evaluation: <empty for the first question; otherwise a brief evaluation of the previous answer>
+question: <exactly one plain-text question>
 ```
 
 For the result, return exactly:
@@ -32,7 +33,7 @@ For the result, return exactly:
 BOUNDARY_QUIZ_RESPONSE
 status: proposal
 known_concepts: <complete prerequisite-consistent understood concept ID list>
-html: <semantic HTML showing the evidence summary and inferred frontier>
+summary: <concise plain-text evidence summary and inferred frontier>
 ```
 
 Do not wrap the handoff in commentary or a Markdown fence.

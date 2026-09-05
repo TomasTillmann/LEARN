@@ -78,22 +78,21 @@ When a concept is named, use it. A review regenerates material from the current 
 
 1. Announce that reassessment changes no persistent state until approval.
 2. Spawn one boundary specialist with the graph, known set, and relevant canonical bank.
-3. Render each returned question through an ephemeral boundary `quiz` payload. Receive the answer in chat and forward it to the same specialist.
-4. Keep substantive evaluations in HTML.
-5. Render the specialist's complete known-set/frontier proposal through `boundary-proposal`.
-6. Ask for approval, corrections, or more questions.
-7. Persist only an approved prerequisite-consistent known set, remove the temporary session, durable-render, report exact consequences, and discard the specialist.
-8. On rejection or abandonment, persist nothing and remove the temporary session.
+3. Relay exactly one returned question in chat, with no action menu, and wait for the learner's answer before continuing.
+4. Forward the answer to the same specialist. In the next chat turn, give its brief evaluation and either exactly one next question or its complete known-set/frontier proposal.
+5. Ask in chat for approval, corrections, or more questions.
+6. Persist only an approved prerequisite-consistent known set, durable-render, report exact consequences, and discard the specialist.
+7. On rejection or abandonment, persist nothing.
 
 ## Revision quiz
 
 1. Announce that any result remains a proposal until approval.
 2. Spawn one revision specialist with the concept, graph, known set, and scoped bank.
-3. Render each question through an ephemeral revision `quiz` payload and forward chat answers to the same specialist.
-4. Render its evaluation, complete proposed known set, and gaps through `revision-result`.
-5. If understood, propose the concept plus prerequisite closure as understood.
-6. If a meaningful gap remains, spawn a separate artifact specialist for a concise remediation section and propose leaving or marking the concept plus dependent closure not understood.
-7. Persist only the approved result, remove the temporary session, durable-render, report consequences, and discard the quiz specialist.
+3. Relay exactly one returned question in chat, with no action menu, and wait for the learner's answer before continuing.
+4. Forward the answer to the same specialist. In the next chat turn, give its brief evaluation and either exactly one next question or its result and gaps.
+5. If understood, propose in chat that the concept plus prerequisite closure be marked understood.
+6. If a meaningful gap remains, explain it briefly in chat, spawn a separate artifact specialist for a concise remediation section, and propose leaving or marking the concept plus dependent closure not understood.
+7. Persist only the approved result, durable-render, report consequences, and discard the quiz specialist.
 
 A direct learner declaration bypasses the quiz.
 
@@ -128,9 +127,9 @@ Use concise operational chat messages:
 
 Lead with the output link whenever one is ready. Put the required action immediately after it; omit background the learner already knows.
 
-Do not put lessons, quiz questions, detailed evaluations, gaps, or source comparisons in chat.
+Do not put lessons or source comparisons in chat. Keep every quiz entirely in chat. Each active quiz turn contains only a brief evaluation when there is a previous answer and exactly one question, then waits for the learner's answer. Do not include a numbered action list during an active quiz. Present the final quiz result, gaps, and approval request in chat.
 
-End **every** learner-facing response with a numbered list of concrete actions currently available. Use contextual choices, not a fixed menu. Typical options are:
+End every learner-facing response outside an active quiz with a numbered list of concrete actions currently available. Use contextual choices, not a fixed menu. Typical options are:
 
 1. Learn a new recommended concept.
 2. Revise a named concept.
@@ -138,4 +137,4 @@ End **every** learner-facing response with a numbered list of concrete actions c
 4. Ask a grounded question.
 5. Add or update a source.
 
-During an active approval or quiz, put the immediate action first and include stop/correct alternatives where useful. Never finish a response without this numbered list.
+During an active approval, put the immediate action first and include stop/correct alternatives where useful. Never finish a non-quiz response without this numbered list.
