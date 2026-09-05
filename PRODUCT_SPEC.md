@@ -21,6 +21,8 @@ The learner always has the final word about what they understand.
 
 The learner activates LEARN in chat while working inside the relevant workspace or project directory.
 
+On activation, the agent starts or reuses a local server for the rendered workspace and gives the learner a clickable `http://localhost:<port>/` address.
+
 Typical requests include:
 
 - “I want to learn a new topic.”
@@ -55,7 +57,7 @@ The agent must never use an existing learning artifact as factual input. Wheneve
 - **All substantive output goes to HTML.** Lessons, answers, quiz questions, concept views, citations, and source comparisons are published there.
 - The persistence folder is the single source of truth. The fixed renderer reads and validates that semantic state, then produces the complete read-only UI as disposable output.
 - Agents never author the application shell, navigation, graph drawing, graph positions, empty states, or visual styling. They persist JSON, canonical Markdown, and semantic artifact fragments only.
-- Chat contains only concise operational communication: what the agent is doing, what approval is required, and what changed.
+- Chat contains only concise operational communication: what the agent is doing, what approval is required, and what changed. Every response ends with a contextual numbered list of actions the learner can take next.
 - HTML is read-only. It never sends commands or answers and never persists learner input.
 
 ### 3.3 Learner authority
@@ -150,7 +152,7 @@ The known set contains the concepts currently marked understood. It must always 
 
 ### Learning artifacts
 
-A concept may have one evolving HTML learning artifact. It is created on demand when the concept is learned, reviewed, or receives a substantive question.
+A concept may have one evolving HTML learning artifact. After every graph approval, one fresh background artifact specialist per concept regenerates all “teach me” artifacts in parallel. Later learning, review, and substantive questions may update them until the next approved graph replaces them from the current bank.
 
 The stable workspace behaves like a note graph: selecting a concept node opens the artifact with the matching `conceptId`. If the artifact does not exist, the note pane remains otherwise blank and shows the muted prompt `Generate learning materials in chat.`
 
@@ -208,8 +210,9 @@ For a new topic, the agent:
 3. Stops without creating a graph if the selected material cannot be parsed reliably.
 4. Derives a grounded concept and prerequisite graph.
 5. Shows the graph in HTML and asks the learner to approve or correct it.
-6. Establishes the initial known set through a knowledge-boundary finder, direct learner declarations, or an explicitly empty known set.
-7. Shows the current graph, known set, and learning frontier in HTML.
+6. After approval, spawns one fresh background learning-artifact sub-agent per concept and generates every “teach me” artifact in parallel, bounded only by available concurrency.
+7. Establishes the initial known set through a knowledge-boundary finder, direct learner declarations, or an explicitly empty known set.
+8. Shows the current graph, known set, and learning frontier in HTML.
 
 No quiz data is retained after initialization.
 
@@ -274,7 +277,7 @@ For the selected concept, the session manager:
 
 1. Announces in chat what it is preparing.
 2. Selects the relevant current knowledge-bank context.
-3. Spawns a fresh learning-artifact sub-agent with the central learning prompt, the task, and the scoped bank material.
+3. Spawns a fresh learning-artifact sub-agent with `src/prompts/learn.md`, the task, and the scoped bank material.
 4. Receives the grounded, structured artifact content and publishes it to HTML.
 5. Ends the sub-agent and tells the learner in chat where the output is ready and what a sensible next action is.
 
@@ -364,6 +367,8 @@ In a few sentences, state what is being done and mention whether persistent stat
 
 Always tell the learner what was persisted, including automatic graph or known-set consequences. Keep this short but specific.
 
+Every learner-facing response ends with a contextual numbered list of available actions, such as learning a new concept, revising one, taking a knowledge-boundary quiz, asking a grounded question, or changing sources.
+
 ### Examples
 
 - “I understand this” authorizes the known-set update and required prerequisite closure.
@@ -430,13 +435,20 @@ LEARN should remain a small prompt-native skill. The agent environment is the ru
 LEARN/
 ├── SKILL.md
 └── src/
-    ├── learning_engine/
-    │   └── LEARN_PROMPT.md
+    ├── prompts/
+    │   ├── shared.md
+    │   ├── session_manager.md
+    │   ├── create_concept_graph.md
+    │   ├── learn.md
+    │   ├── knowledge_boundary_quiz.md
+    │   └── revision_quiz.md
     └── scripts/                  # optional; create only when a deterministic helper is justified
 ```
 
-- **`SKILL.md`:** thin entry point. Activates LEARN, starts the session manager, identifies the workspace/topic, loads the learning prompt, and enforces the chat/HTML and approval boundaries.
-- **`src/learning_engine/LEARN_PROMPT.md`:** the learning engine. One cohesive prompt with shared grounding rules and scoped instructions for the session manager, quiz agents, and learning-artifact agents.
+- **`SKILL.md`:** thin entry point. Activates LEARN, starts the session manager, identifies the workspace/topic, and routes to the prompt files.
+- **`src/prompts/shared.md`:** common grounding, state, approval, rendering, conversion, and implementation rules.
+- **`src/prompts/session_manager.md`:** learner-facing coordination, localhost serving, routing, persistence, and next-action behavior.
+- **Use-case prompts:** one focused file for graph creation, learning artifacts, knowledge-boundary quizzes, and revision quizzes.
 - **`src/scripts/`:** optional small helpers called by the agent. Each helper performs one deterministic task and contains no learning judgment.
 - **Session manager agent:** owns the learner conversation, approvals, current flow, and persistence. It delegates heavy semantic generation and remains the only agent that communicates with the learner.
 - **Quiz sub-agent:** a fresh specialist spawned for each complete boundary-finder or revision-quiz session.
@@ -445,7 +457,7 @@ LEARN/
 - **Topic state:** current concept graph and binary known set; the sole learner-state source.
 - **HTML workspace:** read-only projection containing all substantive output.
 
-The directory names may be adjusted to the host skill convention, but the boundary must remain: a thin skill entry prompt, one central learning-behavior prompt, one session manager, fresh task specialists, and only the smallest necessary deterministic helpers.
+The directory names may be adjusted to the host skill convention, but the boundary must remain: a thin skill entry point, shared rules, focused use-case prompts, one session manager, fresh task specialists, and only the smallest necessary deterministic helpers.
 
 ### Prompt versus script boundary
 
@@ -493,8 +505,9 @@ rectangle "Workspace chat\nONLY INPUT / CONTROL SURFACE" as Chat
 
 package "LEARN skill" {
   artifact "SKILL.md\n\nThin activation and policy entry point" as Skill
-  artifact "src/learning_engine/LEARN_PROMPT.md\n\nShared grounding and role instructions\nNo coded learning engine" as Prompt
+  artifact "src/prompts/*.md\n\nShared contract + focused use-case prompts\nNo coded learning engine" as Prompt
   component "Session Manager Agent\n\nOwn chat · approvals · routing · persistence\nONLY LEARNER-FACING AGENT" as Session
+  component "Fresh Graph Agent\n\nOne per graph proposal\nDerive · ground · validate" as GraphAgent
   component "Fresh Quiz Agent\n\nOne per boundary or revision quiz\nGenerate · adapt · evaluate" as QuizAgent
   component "Fresh Artifact Agent\n\nOne per artifact creation or extension\nStructure · explain · cite" as ArtifactAgent
   component "Native tools / small scripts\n\nOne deterministic job each\nconversion · exact mutation\ntraversal · validation · rendering" as Tools
@@ -511,10 +524,12 @@ Session --> Chat : brief status, proposals, change notices
 Learner --> HTML : browse at any time
 
 Session --> Skill : activate and follow
-Skill --> Prompt : load central behavior prompt
-Session --> Prompt : use session instructions
+Skill --> Prompt : load shared + session prompts
+Session --> Prompt : load one matching use-case prompt
+Session --> GraphAgent : always spawn for graph work\nscoped bank, graph, known set
 Session --> QuizAgent : always spawn for a new quiz\nscoped bank, graph, known set, goal
 Session --> ArtifactAgent : always spawn for artifact work\nscoped bank material and task
+Prompt --> GraphAgent : graph instructions
 Prompt --> QuizAgent : quiz instructions
 Prompt --> ArtifactAgent : teaching instructions
 QuizAgent --> Session : question, evaluation,\nor proposed known-set result
@@ -842,6 +857,10 @@ An implementation conforms only if all of these remain true:
 27. Scripts are small, deterministic, single-purpose helpers and make no educational judgments.
 28. Existing tools and plain files are preferred over new services, frameworks, or infrastructure.
 29. Source conversion uses the specified v1 converter by format, preserves source content mechanically, records complete provenance, and cannot mutate the bank or graph on failure.
+30. Activation starts or reuses the localhost workspace server and gives the learner its clickable address.
+31. Every learner-facing response ends with a contextual numbered list of next actions.
+32. Every graph proposal uses a fresh graph specialist.
+33. Every graph approval triggers parallel “teach me” regeneration for every concept without changing the known set.
 
 ## 19. Agent execution checklist
 
@@ -869,7 +888,7 @@ If any factual claim cannot be traced to the knowledge bank or clearly labelled 
 
 LEARN is a skill for an intelligent agent, not a conventional learning application with an intelligence layer recreated in code.
 
-This boundary is normative: the agent is the intelligence and the learning engine is the prompt. One session-manager agent owns chat, state, permissions, and delegation. Fresh specialist agents perform complete quiz sessions and individual artifact-generation tasks from `src/learning_engine/LEARN_PROMPT.md`. When behavior needs improvement, improve the prompts before considering code.
+This boundary is normative: the agent is the intelligence and the learning engine is the prompt set. One session-manager agent owns chat, state, permissions, and delegation. Fresh specialists load `src/prompts/shared.md` plus the single matching use-case prompt. When behavior needs improvement, improve those prompts before considering code.
 
 The agent is the brain and the algorithm. The implementation gives it:
 
@@ -896,6 +915,7 @@ One long-lived session manager owns the active learner session. It is the only a
 It is responsible for:
 
 - activating LEARN and loading the active project/topic;
+- starting or reusing the localhost workspace server and sharing its clickable address;
 - interpreting learner intent;
 - reading the current knowledge bank, graph, and known set;
 - giving concise chat status messages;
@@ -908,6 +928,7 @@ It is responsible for:
 - applying only authorized persistent mutations;
 - recording and enforcing graph-reconciliation-required state after a bank mutation when necessary;
 - reporting every completed persistent change;
+- ending every learner-facing response with a contextual numbered action list;
 - ending disposable sub-agents when their task is complete.
 
 The session manager coordinates. It should not duplicate the specialist's artifact design or quiz reasoning after delegation.
@@ -958,11 +979,17 @@ The artifact sub-agent:
 
 The artifact sub-agent must not use an existing artifact as factual or semantic input. For an extension, it creates a self-contained new section from the current knowledge bank; the session manager appends it mechanically. For a full replacement requested by the learner, it creates a new complete artifact from the bank.
 
+#### Concept-graph sub-agent
+
+The session manager uses a fresh concept-graph sub-agent for every initial graph or reconciliation proposal. It receives current canonical Markdown plus relevant graph and known-set context, and returns one complete grounded acyclic graph proposal. It never persists state or communicates with the learner.
+
+After every graph approval, the session manager immediately spawns one fresh learning-artifact sub-agent per approved concept. It runs them in parallel up to available concurrency, refilling slots until every concept has a fresh artifact grounded in the current bank. The session manager alone persists their results; artifact generation does not change the known set.
+
 ### 20.3 Specialist prompt handoff
 
 Every spawned specialist receives a focused handoff containing only what it needs:
 
-1. Its role: boundary quiz, revision quiz, or learning artifact.
+1. Its role: concept graph, boundary quiz, revision quiz, or learning artifact.
 2. The exact learner request and desired output.
 3. The relevant concept or assessment goal.
 4. The scoped canonical knowledge-bank files.
@@ -972,11 +999,11 @@ Every spawned specialist receives a focused handoff containing only what it need
 
 Do not send unrelated project history or artifacts. More context is not automatically better; the smallest complete grounding reduces confusion and keeps the specialist focused.
 
-### 20.4 `LEARN_PROMPT.md`
+### 20.4 Use-case prompts
 
-`src/learning_engine/LEARN_PROMPT.md` is the central behavioral prompt. It should contain shared rules plus clearly separated role sections for the session manager, quiz sub-agents, and learning-artifact sub-agents.
+`src/prompts/shared.md` contains only common invariants. `session_manager.md` owns coordination, and each specialist loads exactly one focused prompt: `create_concept_graph.md`, `learn.md`, `knowledge_boundary_quiz.md`, or `revision_quiz.md`.
 
-The prompt must instruct every agent to:
+The shared contract must instruct every agent to:
 
 - treat canonical knowledge-bank Markdown as the sole canonical factual source;
 - never invent unsupported facts, concepts, or prerequisites;
@@ -1014,7 +1041,7 @@ For quiz work, the prompt must additionally require:
 - return a proposed result rather than persisting it;
 - stop when further questions are unlikely to change the proposed known set.
 
-This prompt is the learning engine. Improve its wording and examples when agent behavior needs improvement; do not respond by building a coded engine.
+These prompts are the learning engine. Improve the relevant focused prompt when behavior needs improvement; do not respond by building a coded engine.
 
 ### 20.5 File-based persistence
 
@@ -1040,15 +1067,19 @@ Do not persist quiz questions, answers, intermediate judgments, spawned-agent co
 ### 20.6 Implementation invariants
 
 1. The session manager is the only learner-facing agent.
-2. Every knowledge-boundary quiz uses a fresh quiz sub-agent.
-3. Every revision quiz uses a fresh quiz sub-agent.
-4. The same quiz sub-agent continues for the lifetime of its quiz and is then discarded.
-5. Every learning-artifact creation or extension uses a fresh artifact sub-agent.
-6. Specialist sub-agents return work to the session manager and never persist or address the learner directly.
-7. Specialist prompts are grounded in the current knowledge bank, never an old artifact.
-8. The agent remains the source of semantic intelligence; scripts remain optional mechanical helpers.
-9. Persistence uses plain files unless a proven requirement makes them insufficient.
-10. The HTML workspace remains a one-way, read-only presentation surface.
-11. A knowledge-bank mutation cancels any active quiz before changing the bank; no quiz context survives it.
-12. Graph-dependent work cannot use a graph marked as requiring reconciliation.
-13. Source conversion is staged, mechanical, and fail-closed; failure cannot mutate the bank or graph.
+2. Activation starts or reuses a localhost workspace server and shares its clickable address.
+3. Every learner-facing response ends with a contextual numbered action list.
+4. Every concept-graph proposal uses a fresh graph sub-agent.
+5. Graph approval triggers one fresh background artifact sub-agent per concept, running in parallel up to available concurrency.
+6. Every knowledge-boundary quiz uses a fresh quiz sub-agent.
+7. Every revision quiz uses a fresh quiz sub-agent.
+8. The same quiz sub-agent continues for the lifetime of its quiz and is then discarded.
+9. Every learning-artifact creation or extension uses a fresh artifact sub-agent.
+10. Specialist sub-agents return work to the session manager and never persist or address the learner directly.
+11. Specialist prompts are grounded in the current knowledge bank, never an old artifact.
+12. The agent remains the source of semantic intelligence; scripts remain optional mechanical helpers.
+13. Persistence uses plain files unless a proven requirement makes them insufficient.
+14. The HTML workspace remains a one-way, read-only presentation surface.
+15. A knowledge-bank mutation cancels any active quiz before changing the bank; no quiz context survives it.
+16. Graph-dependent work cannot use a graph marked as requiring reconciliation.
+17. Source conversion is staged, mechanical, and fail-closed; failure cannot mutate the bank or graph.

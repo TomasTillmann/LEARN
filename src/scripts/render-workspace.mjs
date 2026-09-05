@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const templatePath = path.resolve(here, "../ui/obsidian-template.html");
+const templatePath = path.resolve(here, "../ui/index.html");
 
 function fail(message) {
   throw new Error(`LEARN renderer: ${message}`);
@@ -229,6 +229,14 @@ function pageName(projectId, topicId) {
   return `${projectId.length}-${projectId}--${topicId.length}-${topicId}.html`;
 }
 
+function projectPageName(projectId) {
+  return `${projectId.length}-${projectId}.html`;
+}
+
+function artifactPageName(projectId, topicId, artifactId) {
+  return `${pageName(projectId, topicId).slice(0, -5)}--${artifactId.length}-${artifactId}.html`;
+}
+
 function validateId(id, label) {
   if (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]*$/.test(id)) fail(`${label} must use lowercase letters, digits, hyphens, or underscores: ${id}`);
 }
@@ -345,6 +353,7 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg) {
   const navProjects = workspace.projects.map((project) => ({
     id: project.id,
     name: project.name,
+    href: `./${projectPageName(project.id)}`,
     topics: project.topics.map(({ id, name }) => ({
       id,
       name,
@@ -353,41 +362,67 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg) {
   }));
 
   const pages = new Map();
+  const pageData = {
+    workspace: { name: workspace.name, projects: navProjects },
+  };
+  pages.set("workspace.html", inject(template, {
+    ...pageData,
+    current: {},
+    page: { kind: "workspace", title: workspace.name },
+  }));
+  for (const project of navProjects) {
+    pages.set(projectPageName(project.id), inject(template, {
+      ...pageData,
+      current: { projectId: project.id },
+      page: { kind: "project", title: project.name, parentHref: "./workspace.html", parentLabel: workspace.name },
+    }));
+  }
   for (const ref of refs) {
     const loaded = await loadTopic(workspaceRoot, ref);
     const isCurrent = current.projectId === ref.projectId && current.topicId === ref.id;
     if (session && isCurrent) validateSession(session, loaded);
+    const artifacts = loaded.artifacts.map((artifact) => ({
+      ...artifact,
+      href: `./${artifactPageName(ref.projectId, ref.id, artifact.id)}`,
+    }));
     const data = {
-      workspace: {
-        name: workspace.name,
-        projects: navProjects.map((project) => ({
-          ...project,
-          topics: project.topics.map((topic) => ({
-            ...topic,
-            active: project.id === ref.projectId && topic.id === ref.id,
-          })),
-        })),
-      },
+      ...pageData,
       current: { projectId: ref.projectId, topicId: ref.id },
       ...loaded,
+      artifacts,
       ...(session && isCurrent
         ? { session }
         : {}),
     };
-    pages.set(pageName(ref.projectId, ref.id), inject(template, data));
+    const topicFile = pageName(ref.projectId, ref.id);
+    pages.set(topicFile, inject(template, {
+      ...data,
+      page: {
+        kind: "topic",
+        title: loaded.topic.title,
+        parentHref: `./${projectPageName(ref.projectId)}`,
+        parentLabel: navProjects.find(({ id }) => id === ref.projectId)?.name,
+      },
+    }));
+    for (const artifact of artifacts) {
+      pages.set(artifactPageName(ref.projectId, ref.id, artifact.id), inject(template, {
+        ...data,
+        page: { kind: "artifact", title: artifact.title, artifactId: artifact.id, parentHref: `./${topicFile}`, parentLabel: loaded.topic.title },
+      }));
+    }
   }
 
-  const activePage = pageName(current.projectId, current.topicId);
-  pages.set("index.html", pages.get(activePage));
+  pages.set("index.html", pages.get(pageName(current.projectId, current.topicId)));
   await replaceDirectory(outputRoot, pages);
-  console.log(`Rendered ${refs.length} topic${refs.length === 1 ? "" : "s"} to ${outputRoot}`);
+  console.log(`Rendered ${pages.size} pages to ${outputRoot}`);
   if (session) console.log("Ephemeral session UI rendered outside the workspace; remove the directory when the session output ends.");
 }
 
 async function check() {
   const template = await readFile(templatePath, "utf8");
   assert.equal(template.split("__LEARN_DATA__").length, 2);
-  for (const marker of ['id="graph-canvas"', 'id="note-empty"', 'id="learn-data"', "mass: nodeRadius * nodeRadius", "requestAnimationFrame(runSimulation)", "context.lineTo(baseX - uy * halfWidth"]) assert.ok(template.includes(marker));
+  for (const marker of ['id="up-link"', 'id="pane-overview"', 'id="graph-canvas"', 'id="note-empty"', 'id="learn-data"', "window.location.href = safeHref(artifact.href)", "setUp(currentTopicHref, topic.title)", "mass: nodeRadius * nodeRadius", "while (ticks < 4000 && movement > .01)", "context.measureText(point.label).width", "if (resizeCanvas()) resetView()", "requestAnimationFrame(runSimulation)", "context.lineTo(baseX - uy * halfWidth"]) assert.ok(template.includes(marker));
+  assert.doesNotMatch(template, /resetView\(\); heatGraph\(\)/);
   const nodes = ["a", "b", "c"].map((id) => ({ id, label: id.toUpperCase(), description: `${id} description`, sourceIds: ["s"] }));
   const edges = [{ from: "a", to: "b", sourceIds: ["s"] }, { from: "b", to: "c", sourceIds: ["s"] }];
   validateGraph(nodes, edges, ["a"], new Set(["s"]));
@@ -400,7 +435,10 @@ async function check() {
   assert.throws(() => validateGraph([{ ...nodes[0], x: 10 }], [], [], new Set(["s"])), /non-semantic field/);
   assert.throws(() => validateGraph(nodes, [{ ...edges[0], color: "red" }], [], new Set(["s"])), /non-semantic field/);
   assert.throws(() => validateId("../escape", "test ID"), /must use/);
+  assert.equal(projectPageName("project"), "7-project.html");
+  assert.equal(artifactPageName("project", "topic", "note"), "7-project--5-topic--4-note.html");
   assert.notEqual(pageName("a--b", "c"), pageName("a", "b--c"));
+  assert.notEqual(artifactPageName("a--b", "c", "d"), artifactPageName("a", "b--c", "d"));
   validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "html/artifacts/lesson.html", labels: ["canonical"], citations: [{ sourceId: "s", locator: "§1" }] });
   assert.throws(() => validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "lesson.html", labels: ["canonical"], citations: [{ sourceId: "s", locator: "§1", href: "https://example.com" }] }), /cannot contain href/);
   assert.throws(() => validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "lesson.html", labels: ["external"], citations: [{ label: "Local", href: "../secret" }] }), /absolute HTTPS/);

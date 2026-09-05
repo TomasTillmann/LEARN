@@ -97,6 +97,8 @@
     }
     .menu { display: none; width: 28px; height: 28px; border-radius: 5px; background: transparent; cursor: pointer; }
     .menu:hover { background: var(--background-modifier-hover); }
+    .up-link { min-height: 28px; padding: 3px 7px; border-radius: 5px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+    .up-link:hover { color: var(--text); background: var(--background-modifier-hover); }
     .breadcrumb { min-width: 0; flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .breadcrumb strong { color: var(--text); font-weight: 600; }
     .status { padding: 2px 7px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
@@ -114,7 +116,7 @@
     .tool-button:hover { color: var(--text); background: #333; }
     .graph-key { position: absolute; left: 14px; bottom: 15px; color: var(--faint); font-size: 11px; pointer-events: none; }
 
-    .note-pane, .source-pane, .session-pane { overflow: auto; }
+    .overview-pane, .note-pane, .source-pane, .session-pane { overflow: auto; }
     .document { width: min(760px, calc(100% - 48px)); margin: 0 auto; padding: 58px 0 90px; }
     .document h1 { margin: 0 0 9px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.035em; }
     .document h2 { margin: 38px 0 12px; font-size: 24px; line-height: 1.25; }
@@ -149,6 +151,11 @@
     .source-document { overflow: auto; }
     .markdown { white-space: pre-wrap; overflow-wrap: anywhere; color: #b8b8b8; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .session-callout { margin-top: 28px; padding: 12px 14px; border-left: 3px solid var(--accent); background: #27252f; color: #c9c5e4; }
+    .overview-list { margin: 26px 0 0; padding: 0; list-style: none; }
+    .overview-link { margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); display: block; text-decoration: none; }
+    .overview-link:hover { background: var(--background-modifier-hover); border-color: #484848; }
+    .overview-link small { margin-left: 7px; color: var(--muted); }
+    .note-button { text-decoration: none; }
     .data-error { position: fixed; z-index: 20; top: 50px; right: 12px; max-width: 360px; padding: 10px 12px; border: 1px solid #704343; border-radius: 6px; color: #efb0b0; background: #382424; }
 
     @media (max-width: 760px) {
@@ -169,7 +176,7 @@
   <div class="app">
     <aside class="sidebar" id="sidebar" aria-label="Learning workspace">
       <div class="vault"><svg class="vault-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 3 7v10l9 5 9-5V7Zm0 2.3 6.8 3.8L12 12 5.2 8.1Zm-7 5.5 6 3.4v6L5 15.8Zm8 9.4v-6l6-3.4v6Z"/></svg><span class="vault-name" id="vault-name">LEARN</span></div>
-      <nav class="nav" aria-label="Views">
+      <nav class="nav" id="view-nav" aria-label="Views">
         <button class="nav-button" id="open-graph" type="button" aria-current="page"><span class="icon">◌</span>Graph</button>
         <button class="nav-button" id="open-sources" type="button"><span class="icon">≡</span>Sources</button>
         <button class="nav-button" id="open-session" type="button" hidden><span class="icon">?</span><span id="session-label">Session</span></button>
@@ -177,7 +184,7 @@
       <div class="tree">
         <p class="tree-label">Workspace</p>
         <div id="project-tree"></div>
-        <p class="tree-label">Notes</p>
+        <p class="tree-label" id="note-label">Notes</p>
         <ul class="note-list" id="note-list"></ul>
       </div>
       <div class="sidebar-foot">Read only · use chat to learn or edit</div>
@@ -186,10 +193,12 @@
     <section class="workspace">
       <header class="titlebar">
         <button class="menu" id="menu" type="button" aria-label="Toggle sidebar">☰</button>
+        <a class="up-link" id="up-link" hidden><span aria-hidden="true">↑</span>Up</a>
         <div class="breadcrumb" id="breadcrumb"></div>
         <span class="status" id="status">synced</span>
       </header>
       <main class="panes">
+        <section class="pane overview-pane" id="pane-overview"><article class="document" id="overview"></article></section>
         <section class="pane graph-pane active" id="pane-graph" aria-label="Concept graph">
           <div class="graph-stage" id="graph-stage">
             <canvas id="graph-canvas" aria-label="Interactive prerequisite graph. Arrows point from prerequisite to dependent. Use the Notes list for keyboard access."></canvas>
@@ -223,6 +232,7 @@
       const text = value => value == null ? "" : String(value);
       const safeHref = value => /^(#|\.\.?\/)/.test(text(value).trim()) ? text(value).trim() : "#";
       const safeExternal = value => { try { const url = new URL(text(value)); return url.protocol === "https:" && !url.username && !url.password ? url.href : "#"; } catch { return "#"; } };
+      const page = data.page || { kind: "topic" };
       const topic = data.topic || {};
       const session = data.session || {};
       const graph = session.active && session.proposedGraph ? session.proposedGraph : (data.graph || { nodes: [], edges: [] });
@@ -237,6 +247,9 @@
       const byNode = new Map(nodes.map(node => [node.id, node]));
       const bySource = new Map(sources.map(source => [source.id, source]));
       const artifactFor = id => artifacts.find(artifact => artifact.conceptId === id);
+      const currentProject = data.workspace?.projects?.find(project => project.id === data.current?.projectId);
+      const currentTopicHref = currentProject?.topics?.find(item => item.id === data.current?.topicId)?.href;
+      document.title = `${page.title || "LEARN"} — LEARN`;
 
       function sanitize(fragment) {
         const template = document.createElement("template");
@@ -266,11 +279,27 @@
         const active = name === "graph" ? $("#open-graph") : name === "sources" ? $("#open-sources") : name === "session" ? $("#open-session") : null;
         active?.setAttribute("aria-current", "page");
         $("#sidebar").classList.remove("open");
-        if (name === "graph") resizeCanvas();
+        if (name !== "note") setUp(page.parentHref, page.parentLabel);
+        if (name === "graph") requestAnimationFrame(() => {
+          if (!resizeCanvas()) return;
+          if (!graphStarted) { graphStarted = true; settleGraph(); resetView(); }
+          else drawGraph();
+        });
+      }
+
+      function setUp(href, label) {
+        const up = $("#up-link");
+        up.hidden = !href;
+        if (!href) { up.removeAttribute("href"); up.removeAttribute("aria-label"); return; }
+        up.href = safeHref(href);
+        up.setAttribute("aria-label", `Up to ${label || "parent"}`);
       }
 
       function renderWorkspace() {
         $("#vault-name").textContent = data.workspace?.name || "LEARN";
+        const hasTopic = Boolean(data.current?.topicId);
+        $("#view-nav").hidden = !hasTopic;
+        $("#note-label").hidden = !hasTopic;
         const tree = $("#project-tree");
         (data.workspace?.projects || []).forEach(project => {
           const details = document.createElement("details");
@@ -283,7 +312,7 @@
           (project.topics || []).forEach(item => {
             const li = document.createElement("li");
             const link = document.createElement("a");
-            link.className = "topic-link" + (item.active ? " current" : "");
+            link.className = "topic-link" + (project.id === data.current?.projectId && item.id === data.current?.topicId ? " current" : "");
             link.href = safeHref(item.href);
             link.textContent = item.name;
             li.append(link); list.append(li);
@@ -294,18 +323,19 @@
         const notes = $("#note-list");
         nodes.slice().sort((a, b) => a.label.localeCompare(b.label)).forEach(node => {
           const li = document.createElement("li");
-          const button = document.createElement("button");
+          const artifact = artifactFor(node.id);
+          const button = document.createElement(artifact ? "a" : "button");
           button.className = "note-button";
-          button.type = "button";
+          if (artifact) button.href = safeHref(artifact.href);
+          else { button.type = "button"; button.addEventListener("click", () => openNote(node.id)); }
+          if (artifact?.id === page.artifactId) button.setAttribute("aria-current", "page");
           const dot = document.createElement("span");
           dot.className = `note-dot ${node.state}`;
           button.append(dot, document.createTextNode(node.label));
-          button.addEventListener("click", () => openNote(node.id));
           li.append(button); notes.append(li);
         });
 
-        const project = data.workspace?.projects?.find(item => item.id === data.current?.projectId);
-        [data.workspace?.name, project?.name, topic.title].filter(Boolean).forEach((part, index, all) => {
+        [data.workspace?.name, currentProject?.name, data.current?.topicId && topic.title, page.kind === "artifact" && page.title].filter(Boolean).forEach((part, index, all) => {
           const element = document.createElement(index === all.length - 1 ? "strong" : "span");
           element.textContent = part;
           $("#breadcrumb").append(element);
@@ -314,6 +344,24 @@
         const pending = Boolean(topic.graphReconciliationRequired || session.active);
         $("#status").textContent = pending ? (session.active ? "preview" : "review needed") : "synced";
         $("#status").classList.toggle("pending", pending);
+        setUp(page.parentHref, page.parentLabel);
+      }
+
+      function renderOverview() {
+        if (!["workspace", "project"].includes(page.kind)) return;
+        const host = $("#overview");
+        const title = document.createElement("h1"); title.textContent = page.title || "LEARN";
+        const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = page.kind === "workspace" ? "Workspace" : "Project";
+        const list = document.createElement("ul"); list.className = "overview-list";
+        const items = page.kind === "workspace" ? (data.workspace?.projects || []) : (currentProject?.topics || []);
+        items.forEach(item => {
+          const li = document.createElement("li");
+          const link = document.createElement("a"); link.className = "overview-link"; link.href = safeHref(item.href);
+          const name = document.createElement("strong"); name.textContent = item.name;
+          const detail = document.createElement("small"); detail.textContent = page.kind === "workspace" ? `${item.topics?.length || 0} topic${item.topics?.length === 1 ? "" : "s"}` : "Topic";
+          link.append(name, detail); li.append(link); list.append(li);
+        });
+        host.append(title, meta, list);
       }
 
       function renderArtifact(artifact) {
@@ -355,10 +403,12 @@
         const index = ordered.findIndex(node => node.id === id);
         if (index >= 0) $$(".note-button")[index]?.setAttribute("aria-current", "page");
         const artifact = artifactFor(id);
+        if (artifact?.href) { window.location.href = safeHref(artifact.href); return; }
         $("#note").hidden = !artifact;
         $("#note-empty").hidden = Boolean(artifact);
         if (artifact) renderArtifact(artifact);
         setPane("note");
+        setUp(currentTopicHref, topic.title);
       }
 
       function renderSources() {
@@ -405,7 +455,7 @@
 
       const canvas = $("#graph-canvas");
       const context = canvas.getContext("2d");
-      let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null;
+      let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null, graphStarted = false;
       const degree = new Map(nodes.map(node => [node.id, 0]));
       edges.forEach(edge => { degree.set(edge.from, (degree.get(edge.from) || 0) + 1); degree.set(edge.to, (degree.get(edge.to) || 0) + 1); });
       const points = nodes.map((node, index) => {
@@ -446,6 +496,11 @@
         const movement = tickGraph() + tickGraph();
         simulationTicks += 2; drawGraph();
         if (simulationTicks < 260 && movement > .01) simulationFrame = requestAnimationFrame(runSimulation);
+      }
+
+      function settleGraph() {
+        let movement = Infinity, ticks = 0;
+        while (ticks < 4000 && movement > .01) { movement = tickGraph() + tickGraph(); ticks += 2; }
       }
 
       function heatGraph() {
@@ -492,18 +547,39 @@
 
       function resetView() {
         if (!points.length) return;
-        const xs = points.map(point => point.x), ys = points.map(point => point.y);
-        const spanX = Math.max(...xs) - Math.min(...xs) + 180, spanY = Math.max(...ys) - Math.min(...ys) + 140;
-        scale = Math.max(.45, Math.min(1.35, width / spanX, height / spanY));
-        panX = -(Math.max(...xs) + Math.min(...xs)) / 2; panY = -(Math.max(...ys) + Math.min(...ys)) / 2;
+        const graphBounds = atScale => {
+          const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+          points.forEach(point => {
+            const x = point.x * atScale, y = point.y * atScale;
+            const radius = Math.max(2.5, point.radius * Math.sqrt(atScale));
+            const fontSize = Math.max(10, Math.min(14, 11 * Math.sqrt(atScale)));
+            context.font = `400 ${fontSize}px Inter, sans-serif`;
+            const labelWidth = atScale > .42 ? 9 + context.measureText(point.label).width : radius;
+            bounds.minX = Math.min(bounds.minX, x - radius);
+            bounds.maxX = Math.max(bounds.maxX, x + Math.max(radius, labelWidth));
+            bounds.minY = Math.min(bounds.minY, y - Math.max(radius, atScale > .42 ? fontSize - 4 : 0));
+            bounds.maxY = Math.max(bounds.maxY, y + Math.max(radius, atScale > .42 ? 4 + fontSize / 4 : 0));
+          });
+          return bounds;
+        };
+        const padding = 36;
+        let low = .05, high = 1.35;
+        for (let i = 0; i < 20; i++) {
+          const candidate = (low + high) / 2, bounds = graphBounds(candidate);
+          if (bounds.maxX - bounds.minX <= width - padding * 2 && bounds.maxY - bounds.minY <= height - padding * 2) low = candidate;
+          else high = candidate;
+        }
+        scale = low;
+        const bounds = graphBounds(scale);
+        panX = -(bounds.minX + bounds.maxX) / (2 * scale); panY = -(bounds.minY + bounds.maxY) / (2 * scale);
         drawGraph();
       }
 
       function resizeCanvas() {
-        const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return;
+        const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return false;
         const ratio = Math.min(2, window.devicePixelRatio || 1);
         width = bounds.width; height = bounds.height; canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-        context.setTransform(ratio, 0, 0, ratio, 0, 0); drawGraph();
+        context.setTransform(ratio, 0, 0, ratio, 0, 0); return true;
       }
 
       canvas.addEventListener("pointerdown", event => {
@@ -526,11 +602,11 @@
       canvas.addEventListener("wheel", event => {
         event.preventDefault();
         const beforeX = (event.offsetX - width / 2) / scale - panX, beforeY = (event.offsetY - height / 2) / scale - panY;
-        scale = Math.max(.25, Math.min(4, scale * Math.exp(-event.deltaY * .001)));
+        scale = Math.max(.05, Math.min(4, scale * Math.exp(-event.deltaY * .001)));
         panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph();
       }, { passive: false });
 
-      renderWorkspace(); renderSources(); renderSession();
+      renderWorkspace(); renderOverview(); renderSources(); renderSession();
       $("#graph-empty").hidden = Boolean(nodes.length);
       $("#graph-key").hidden = !nodes.length; $(".graph-tools").hidden = !nodes.length;
       $("#open-graph").addEventListener("click", () => setPane("graph"));
@@ -538,10 +614,12 @@
       $("#open-session").addEventListener("click", () => setPane("session"));
       $("#menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
       $("#zoom-in").addEventListener("click", () => { scale = Math.min(4, scale * 1.2); drawGraph(); });
-      $("#zoom-out").addEventListener("click", () => { scale = Math.max(.25, scale / 1.2); drawGraph(); });
+      $("#zoom-out").addEventListener("click", () => { scale = Math.max(.05, scale / 1.2); drawGraph(); });
       $("#reset-view").addEventListener("click", resetView);
-      window.addEventListener("resize", resizeCanvas);
-      requestAnimationFrame(() => { resizeCanvas(); resetView(); heatGraph(); });
+      window.addEventListener("resize", () => { if (resizeCanvas()) resetView(); });
+      if (page.kind === "workspace" || page.kind === "project") setPane("overview");
+      else if (page.kind === "artifact") { const artifact = artifacts.find(item => item.id === page.artifactId); if (artifact) renderArtifact(artifact); setPane("note"); }
+      else setPane("graph");
     })();
   </script>
 </body>
