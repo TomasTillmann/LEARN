@@ -105,16 +105,12 @@
     .source-problem { margin: 10px 0 0; color: var(--danger); }
     .concept-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 24px; }
     .relation-list { padding-left: 20px; }
-    .graph-frame { margin-top: 24px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; background: #151515; }
-    .graph { display: block; min-width: 100%; }
-    .edge { fill: none; stroke: #858585; stroke-width: 1.6; }
-    .graph-node rect { stroke-width: 2; rx: 8; }
-    .graph-node.known rect { fill: #3d3478; stroke: var(--known); }
-    .graph-node.ready rect { fill: #30283a; stroke: var(--ready); }
-    .graph-node.later rect { fill: #292929; stroke: var(--later); stroke-dasharray: 5 4; }
-    .graph-node:hover rect, .graph-node:focus rect { filter: brightness(1.25); }
-    .graph-node text { fill: var(--text); font-size: 13px; pointer-events: none; }
-    .graph-node .graph-state { fill: var(--muted); font-size: 11px; }
+    .graph-frame { position: relative; height: clamp(420px, 66vh, 760px); margin-top: 24px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: #151515; }
+    .graph-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+    .graph-canvas.dragging { cursor: grabbing; }
+    .graph-tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 5px; }
+    .graph-tool { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: #232323dd; cursor: pointer; }
+    .graph-tool:hover { background: var(--hover); }
     .graph-legend { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 12px; }
     .legend-item { display: inline-flex; align-items: center; gap: 6px; }
     .legend-item .state-dot { margin: 0; }
@@ -444,37 +440,6 @@
         return null;
       }
 
-      function layoutGraph(graph) {
-        const byId = new Map(graph.nodes.map(item => [item.id, item]));
-        const indegree = new Map(graph.nodes.map(item => [item.id, 0]));
-        const children = new Map(graph.nodes.map(item => [item.id, []]));
-        graph.edges.forEach(edge => { indegree.set(edge.to, indegree.get(edge.to) + 1); children.get(edge.from).push(edge.to); });
-        const depth = new Map(graph.nodes.map(item => [item.id, 0]));
-        const ready = graph.nodes.filter(item => indegree.get(item.id) === 0).sort(compareConcepts).map(item => item.id);
-        for (let cursor = 0; cursor < ready.length; cursor += 1) {
-          const id = ready[cursor];
-          children.get(id).sort((a, b) => compareConcepts(byId.get(a), byId.get(b))).forEach(child => {
-            depth.set(child, Math.max(depth.get(child), depth.get(id) + 1));
-            indegree.set(child, indegree.get(child) - 1);
-            if (indegree.get(child) === 0) ready.push(child);
-          });
-        }
-        const layers = [];
-        graph.nodes.forEach(item => (layers[depth.get(item.id)] ||= []).push(item));
-        layers.forEach(layer => layer.sort(compareConcepts));
-        const box = { width: 190, height: 68, xGap: 72, yGap: 26, margin: 34 };
-        const rows = Math.max(1, ...layers.map(layer => layer.length));
-        const width = box.margin * 2 + layers.length * box.width + Math.max(0, layers.length - 1) * box.xGap;
-        const height = box.margin * 2 + rows * box.height + Math.max(0, rows - 1) * box.yGap;
-        const points = new Map();
-        layers.forEach((layer, column) => {
-          const layerHeight = layer.length * box.height + Math.max(0, layer.length - 1) * box.yGap;
-          const startY = (height - layerHeight) / 2;
-          layer.forEach((item, row) => points.set(item.id, { x: box.margin + column * (box.width + box.xGap), y: startY + row * (box.height + box.yGap), item }));
-        });
-        return { width, height, points, box };
-      }
-
       function renderGraph(topic) {
         const state = graphState(topic);
         const host = node("article", { class: "document wide" }, node("h1", { text: topic.title }), node("p", { class: "meta", text: `${topic.eyebrow} · updated ${topic.updatedAt}` }), node("p", { class: "lede", text: topic.summary }));
@@ -482,35 +447,111 @@
         if (!state.graph.nodes.length) {
           host.append(node("div", { class: "empty", text: topic.reconciliationRequired ? "The concept graph is waiting for review in chat." : "No concepts yet." })); main.append(host); return;
         }
-        const layout = layoutGraph(state.graph);
-        const svgNs = "http://www.w3.org/2000/svg";
-        const svg = document.createElementNS(svgNs, "svg");
-        svg.setAttribute("class", "graph"); svg.setAttribute("viewBox", `0 0 ${layout.width} ${layout.height}`); svg.setAttribute("width", layout.width); svg.setAttribute("height", layout.height); svg.setAttribute("role", "group"); svg.setAttribute("aria-label", `Prerequisite graph with ${state.graph.nodes.length} concepts. Arrows point from prerequisite to dependent.`);
-        const defs = document.createElementNS(svgNs, "defs");
-        const marker = document.createElementNS(svgNs, "marker"); marker.setAttribute("id", "arrow"); marker.setAttribute("viewBox", "0 0 10 10"); marker.setAttribute("refX", "9"); marker.setAttribute("refY", "5"); marker.setAttribute("markerWidth", "6"); marker.setAttribute("markerHeight", "6"); marker.setAttribute("orient", "auto-start-reverse");
-        const arrow = document.createElementNS(svgNs, "path"); arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z"); arrow.setAttribute("fill", "#858585"); marker.append(arrow); defs.append(marker); svg.append(defs);
-        state.graph.edges.forEach(edge => {
-          const from = layout.points.get(edge.from), to = layout.points.get(edge.to);
-          const pathNode = document.createElementNS(svgNs, "path");
-          const x1 = from.x + layout.box.width, y1 = from.y + layout.box.height / 2, x2 = to.x, y2 = to.y + layout.box.height / 2, bend = Math.max(30, (x2 - x1) / 2);
-          pathNode.setAttribute("class", "edge"); pathNode.setAttribute("d", `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`); pathNode.setAttribute("marker-end", "url(#arrow)");
-          const evidence = edge.evidence.map(item => `${sourceFor(topic, item.sourceId)?.title || item.sourceId} — ${item.locator}`).join("; ");
-          const title = document.createElementNS(svgNs, "title"); title.textContent = `${from.item.label} is a prerequisite for ${to.item.label}. Evidence: ${evidence}.`; pathNode.append(title); svg.append(pathNode);
-        });
-        const artifacts = new Map(topic.artifacts.filter(item => item.conceptId).map(item => [item.conceptId, item]));
-        state.graph.nodes.forEach(concept => {
-          const point = layout.points.get(concept.id), value = state.state(concept.id);
-          const artifact = artifacts.get(concept.id);
-          const link = document.createElementNS(svgNs, "a"); link.setAttribute("href", artifact ? routeHref("artifact", topic.projectId, topic.id, artifact.id) : routeHref("concept", topic.projectId, topic.id, concept.id)); link.setAttribute("class", `graph-node ${value}`);
-          const title = document.createElementNS(svgNs, "title"); title.textContent = `${concept.label}. ${value === "known" ? "Known" : value === "ready" ? "Ready next" : "Later"}. ${concept.description}`;
-          const rect = document.createElementNS(svgNs, "rect"); rect.setAttribute("x", point.x); rect.setAttribute("y", point.y); rect.setAttribute("width", layout.box.width); rect.setAttribute("height", layout.box.height);
-          const label = concept.label.length > 27 ? `${concept.label.slice(0, 26)}…` : concept.label;
-          const textNode = document.createElementNS(svgNs, "text"); textNode.setAttribute("x", point.x + 13); textNode.setAttribute("y", point.y + 31); textNode.textContent = label;
-          const stateNode = document.createElementNS(svgNs, "text"); stateNode.setAttribute("class", "graph-state"); stateNode.setAttribute("x", point.x + 13); stateNode.setAttribute("y", point.y + 51); stateNode.textContent = value === "known" ? "Known" : value === "ready" ? "Ready next" : "Later";
-          link.append(title, rect, textNode, stateNode); svg.append(link);
-        });
-        host.append(node("div", { class: "graph-frame" }, svg), node("div", { class: "graph-legend" }, node("span", { class: "legend-item" }, node("span", { class: "state-dot known", "aria-hidden": "true" }), "Known"), node("span", { class: "legend-item" }, node("span", { class: "state-dot ready", "aria-hidden": "true" }), "Ready next"), node("span", { class: "legend-item" }, node("span", { class: "state-dot later", "aria-hidden": "true" }), "Later"), node("span", { text: "Arrows: prerequisite → dependent" })));
+        const canvas = node("canvas", { class: "graph-canvas", tabindex: "0", "aria-label": `Interactive prerequisite gravity graph with ${state.graph.nodes.length} concepts. Arrows point from prerequisite to dependent. Use the Concepts list for keyboard navigation.` });
+        const zoomIn = node("button", { class: "graph-tool", type: "button", "aria-label": "Zoom in", text: "+" });
+        const zoomOut = node("button", { class: "graph-tool", type: "button", "aria-label": "Zoom out", text: "−" });
+        const reset = node("button", { class: "graph-tool", type: "button", "aria-label": "Reset graph view", text: "⌂" });
+        host.append(node("div", { class: "graph-frame" }, canvas, node("div", { class: "graph-tools" }, zoomOut, reset, zoomIn)), node("div", { class: "graph-legend" }, node("span", { class: "legend-item" }, node("span", { class: "state-dot known", "aria-hidden": "true" }), "Known"), node("span", { class: "legend-item" }, node("span", { class: "state-dot ready", "aria-hidden": "true" }), "Ready next"), node("span", { class: "legend-item" }, node("span", { class: "state-dot later", "aria-hidden": "true" }), "Later"), node("span", { text: "Arrows: prerequisite → dependent · scroll to zoom · drag to move" })));
         main.append(host);
+
+        const context = canvas.getContext("2d");
+        const edges = state.graph.edges;
+        const artifacts = new Map(topic.artifacts.filter(item => item.conceptId).map(item => [item.conceptId, item]));
+        const degree = new Map(state.graph.nodes.map(item => [item.id, 0]));
+        edges.forEach(edge => { degree.set(edge.from, degree.get(edge.from) + 1); degree.set(edge.to, degree.get(edge.to) + 1); });
+        const points = state.graph.nodes.slice().sort(compareConcepts).map((concept, index) => {
+          let hash = 2166136261;
+          for (const character of concept.id) { hash ^= character.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+          const angle = index * 2.399963 + (hash >>> 0) / 4294967296;
+          const radius = 45 + 22 * Math.sqrt(index), nodeRadius = 4 + Math.min(7, Math.sqrt(degree.get(concept.id)) * 2.2);
+          return { ...concept, state: state.state(concept.id), x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0, radius: nodeRadius, mass: nodeRadius * nodeRadius / 16 };
+        });
+        const byPoint = new Map(points.map(point => [point.id, point]));
+        let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null, frame = null, ticks = 0;
+
+        function tickGraph() {
+          // ponytail: pairwise repulsion is simplest; use Barnes-Hut if topics grow beyond the 120-node contract.
+          for (let left = 0; left < points.length; left += 1) for (let right = left + 1; right < points.length; right += 1) {
+            const a = points[left], b = points[right], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
+            const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
+            a.vx -= dx * force / a.mass; a.vy -= dy * force / a.mass; b.vx += dx * force / b.mass; b.vy += dy * force / b.mass;
+          }
+          edges.forEach(edge => {
+            const a = byPoint.get(edge.from), b = byPoint.get(edge.to), dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1, force = (distance - 112) * .012;
+            a.vx += dx / distance * force / a.mass; a.vy += dy / distance * force / a.mass; b.vx -= dx / distance * force / b.mass; b.vy -= dy / distance * force / b.mass;
+          });
+          let movement = 0;
+          points.forEach(point => {
+            if (drag?.point === point) { point.vx = point.vy = 0; return; }
+            point.vx = (point.vx - point.x * .0025) * .78; point.vy = (point.vy - point.y * .0025) * .78;
+            point.x += point.vx; point.y += point.vy; movement += Math.abs(point.vx) + Math.abs(point.vy);
+          });
+          return movement;
+        }
+
+        const screen = point => ({ x: width / 2 + (point.x + panX) * scale, y: height / 2 + (point.y + panY) * scale });
+        const pointAt = (x, y) => points.slice().reverse().find(point => { const position = screen(point); return Math.hypot(x - position.x, y - position.y) <= Math.max(10, point.radius * scale + 5); });
+        const related = (id, edge) => !id || edge.from === id || edge.to === id;
+
+        function drawGraph() {
+          context.clearRect(0, 0, width, height);
+          context.lineWidth = 1;
+          edges.forEach(edge => {
+            const a = byPoint.get(edge.from), b = byPoint.get(edge.to), from = screen(a), to = screen(b);
+            const dx = to.x - from.x, dy = to.y - from.y, distance = Math.hypot(dx, dy) || 1, ux = dx / distance, uy = dy / distance;
+            const tipX = to.x - ux * (Math.max(2.5, b.radius * Math.sqrt(scale)) + 2), tipY = to.y - uy * (Math.max(2.5, b.radius * Math.sqrt(scale)) + 2), baseX = tipX - ux * 9, baseY = tipY - uy * 9;
+            context.strokeStyle = context.fillStyle = hoverId && !related(hoverId, edge) ? "#343434" : "#686868";
+            context.beginPath(); context.moveTo(from.x + ux * Math.max(2.5, a.radius * Math.sqrt(scale)), from.y + uy * Math.max(2.5, a.radius * Math.sqrt(scale))); context.lineTo(baseX, baseY); context.stroke();
+            context.beginPath(); context.moveTo(tipX, tipY); context.lineTo(baseX - uy * 4.5, baseY + ux * 4.5); context.lineTo(baseX + uy * 4.5, baseY - ux * 4.5); context.closePath(); context.fill();
+          });
+          points.forEach(point => {
+            const position = screen(point), connected = !hoverId || point.id === hoverId || edges.some(edge => related(hoverId, edge) && (edge.from === point.id || edge.to === point.id));
+            context.globalAlpha = connected ? 1 : .22;
+            context.fillStyle = point.state === "known" ? "#9384ff" : point.state === "ready" ? "#dec4ff" : "#a9a9a9";
+            if (point.id === hoverId) { context.shadowColor = "#b9afff"; context.shadowBlur = 12; }
+            context.beginPath(); context.arc(position.x, position.y, Math.max(2.5, point.radius * Math.sqrt(scale)), 0, Math.PI * 2); context.fill(); context.shadowBlur = 0;
+            if (scale > .42 || point.id === hoverId) { context.font = `${point.id === hoverId ? 600 : 400} ${Math.max(10, Math.min(14, 11 * Math.sqrt(scale)))}px Inter, sans-serif`; context.fillStyle = point.id === hoverId ? "#f0f0f0" : "#c1c1c1"; context.fillText(point.label, position.x + 9, position.y + 4); }
+          });
+          context.globalAlpha = 1;
+        }
+
+        function resetView() {
+          const xs = points.map(point => point.x), ys = points.map(point => point.y), spanX = Math.max(...xs) - Math.min(...xs) + 180, spanY = Math.max(...ys) - Math.min(...ys) + 140;
+          scale = Math.max(.45, Math.min(1.35, width / spanX, height / spanY)); panX = -(Math.max(...xs) + Math.min(...xs)) / 2; panY = -(Math.max(...ys) + Math.min(...ys)) / 2; drawGraph();
+        }
+
+        function runSimulation() {
+          frame = null;
+          const movement = tickGraph() + tickGraph(); ticks += 2; drawGraph();
+          if (canvas.isConnected && ticks < 260 && movement > .01) frame = requestAnimationFrame(runSimulation);
+        }
+
+        function heatGraph() { ticks = 0; if (frame === null) frame = requestAnimationFrame(runSimulation); }
+        function resizeCanvas() {
+          const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return;
+          const ratio = Math.min(2, window.devicePixelRatio || 1); width = bounds.width; height = bounds.height; canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio); context.setTransform(ratio, 0, 0, ratio, 0, 0); drawGraph();
+        }
+
+        canvas.addEventListener("pointerdown", event => { const point = pointAt(event.offsetX, event.offsetY); drag = { point, x: event.clientX, y: event.clientY, panX, panY, moved: false }; canvas.setPointerCapture(event.pointerId); canvas.classList.add("dragging"); });
+        canvas.addEventListener("pointermove", event => {
+          if (!drag) { hoverId = pointAt(event.offsetX, event.offsetY)?.id || null; canvas.style.cursor = hoverId ? "pointer" : "grab"; drawGraph(); return; }
+          const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.moved ||= Math.hypot(dx, dy) > 4;
+          if (drag.point) { drag.point.x += dx / scale; drag.point.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; heatGraph(); }
+          else { panX = drag.panX + dx / scale; panY = drag.panY + dy / scale; }
+          drawGraph();
+        });
+        canvas.addEventListener("pointerup", event => { if (drag?.point && !drag.moved) { const artifact = artifacts.get(drag.point.id); location.hash = artifact ? routeHref("artifact", topic.projectId, topic.id, artifact.id) : routeHref("concept", topic.projectId, topic.id, drag.point.id); } drag = null; canvas.releasePointerCapture(event.pointerId); canvas.classList.remove("dragging"); });
+        canvas.addEventListener("pointerleave", () => { if (!drag) { hoverId = null; drawGraph(); } });
+        canvas.addEventListener("wheel", event => { event.preventDefault(); const beforeX = (event.offsetX - width / 2) / scale - panX, beforeY = (event.offsetY - height / 2) / scale - panY; scale = Math.max(.25, Math.min(4, scale * Math.exp(-event.deltaY * .001))); panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph(); }, { passive: false });
+        zoomIn.addEventListener("click", () => { scale = Math.min(4, scale * 1.2); drawGraph(); });
+        zoomOut.addEventListener("click", () => { scale = Math.max(.25, scale / 1.2); drawGraph(); });
+        reset.addEventListener("click", resetView);
+
+        const observer = new ResizeObserver(() => { resizeCanvas(); resetView(); }); observer.observe(canvas);
+        resizeCanvas(); resetView();
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) { for (let tick = 0; tick < 260; tick += 1) tickGraph(); resetView(); }
+        else heatGraph();
+        graphCleanup = () => { if (frame !== null) cancelAnimationFrame(frame); observer.disconnect(); };
       }
 
       function renderSources(topic) {
@@ -573,12 +614,12 @@
         host.append(...renderSections(session, topic), node("div", { class: session.stale ? "callout danger" : "callout", text: session.stale ? "This preview is non-approvable." : "Continue in chat to approve, correct, save, or discard this preview." })); main.append(host);
       }
 
-      let focusContent = false;
+      let focusContent = false, graphCleanup = () => {};
       function render() {
         const route = parseRoute();
         const topic = route.topicId && topicFor(route.projectId, route.topicId);
         const artifact = topic && route.artifactId ? topic.artifacts.find(item => item.id === route.artifactId) : null;
-        main.replaceChildren();
+        graphCleanup(); graphCleanup = () => {}; main.replaceChildren();
         main.scrollTop = 0;
         renderSidebar(route, topic);
         renderBreadcrumb(route, topic, artifact);

@@ -569,7 +569,7 @@ async function check() {
   assert.equal(template.split("__LEARN_DATA__").length, 2);
   assert.doesNotMatch(template, /\bfetch\s*\(|type=["']module["']|localhost|127\.0\.0\.1/);
   assert.doesNotMatch(template, /\.innerHTML\s*=/);
-  for (const marker of ['id="learn-data"', "function renderGraph", "renderMarkdown", "layoutGraph", "aria-expanded"]) assert.ok(template.includes(marker));
+  for (const marker of ['id="learn-data"', "function renderGraph", "renderMarkdown", "tickGraph", "requestAnimationFrame(runSimulation)", "aria-expanded"]) assert.ok(template.includes(marker));
   const inlinePatternSource = template.match(/const inlinePattern = (\/[^\n]+\/gu);/)?.[1];
   assert.ok(inlinePatternSource);
   assert.doesNotMatch("foo_bar_baz", new Function(`return ${inlinePatternSource}`)());

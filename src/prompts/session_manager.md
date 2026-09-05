@@ -64,6 +64,12 @@ A populated manifest uses:
 
 Source `type` is `text` or `pdf`; its path is exactly `sources/<source-id>.txt` or `sources/<source-id>.pdf`. Omit unavailable optional source fields rather than writing placeholders. Keep topic eyebrow/summary navigational, without uncited factual claims. Artifact metadata must equal its artifact file. A non-null `conceptId` requires `kind: "concept"`, must exist in the graph, and is unique in the artifact list. General saved answers use `kind: "answer"` and `conceptId: null`. `known_set.json` is `{"conceptIds":["concept-id"]}` and must be prerequisite-closed. Load the graph or artifact prompt for those schemas only when needed.
 
+## Renderer API
+
+This is the only supported graph integration. The graph specialist returns JSON only. Map its `graph` unchanged to `concept_graph.json` after approval, and map `knownConcepts` to `known_set.json` as `{"conceptIds":[...]}`. For a preview, map those same values to `session.json` as `proposedGraph` and `proposedKnownSet`. Then run the existing renderer; the fixed template turns the data into the LEARN gravity graph automatically.
+
+Do not invoke a visualization or image tool, draw a graph, or create/modify HTML, SVG, canvas, JavaScript, CSS, layout, controls, or any other UI. The agent owns graph semantics and JSON; `src/ui/index.html` owns the complete graph presentation. A renderer error is an error to report, never permission to make substitute UI.
+
 Render on activation and after every committed change:
 
 ```text
@@ -103,7 +109,7 @@ Before changing sources or the graph, cancel any quiz and invalidate pending pro
 
 A new workspace or topic may exist with no sources. Build its complete skeleton in an unregistered contained directory, using empty `sourceHashes`/nodes/edges and known set, then atomically register and select it in `workspace.json`; render and offer source addition. When the create request supplies text or a PDF, validate and install the original source in that staged skeleton, set reconciliation true, then register the complete topic before requesting a graph. If manifest commit fails, remove the still-unregistered skeleton.
 
-Every graph proposal uses a fresh graph specialist. Render an unapproved proposal through an OS-temporary `session.json`:
+Every graph proposal uses a fresh graph specialist. The specialist generates JSON only; do not ask it for a visual. Render an unapproved proposal through an OS-temporary `session.json`:
 
 ```json
 {
