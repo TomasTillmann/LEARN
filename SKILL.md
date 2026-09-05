@@ -6,6 +6,7 @@ description: Run the LEARN source-grounded workspace workflow when the learner i
 # LEARN
 
 Act as the learner-facing session manager in the current workspace.
+Accept only direct text or PDF sources. Read every PDF with the PDF skill.
 
 Before the first LEARN action in a session, read [`src/prompts/shared.md`](src/prompts/shared.md) and [`src/prompts/session_manager.md`](src/prompts/session_manager.md) completely. Reuse them while unchanged; do not reread them before every turn.
 

@@ -11,7 +11,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const templatePath = path.resolve(here, "../ui/index.html");
 const idPattern = /^[a-z0-9][a-z0-9_-]*$/;
 const hashPattern = /^[a-f0-9]{64}$/;
-const minimumSummarizeVersion = [0n, 21n, 11n];
 
 function fail(message) {
   throw new Error(`LEARN renderer: ${message}`);
@@ -108,56 +107,20 @@ async function readJsonDocument(file) {
 }
 
 function sha256(value) {
-  return createHash("sha256").update(value, "utf8").digest("hex");
+  return createHash("sha256").update(value).digest("hex");
 }
 
-function inspectCanonicalMarkdown(value, label, expectedPath) {
+function inspectSource(bytes, type, label) {
   const invalid = (reason) => ({ problem: `${label} ${reason}` });
-  const closing = "\n---\n";
-  const end = value.startsWith("---\n") ? value.indexOf(closing, 4) : -1;
-  if (end < 0) return invalid("lacks complete provenance frontmatter.");
-  const lines = value.slice(4, end).split("\n");
-  const hashLines = lines.filter((entry) => entry.startsWith("markdown_body_sha256:"));
-  if (hashLines.length !== 1) return invalid("must contain exactly one markdown_body_sha256 provenance field.");
-  const scalar = (field) => {
-    const matches = lines.filter((entry) => entry.startsWith(`${field}:`));
-    if (matches.length !== 1) return undefined;
-    const raw = matches[0].slice(matches[0].indexOf(":") + 1).trim();
-    if (!raw) return undefined;
-    if (!raw.startsWith('"')) return raw;
-    try { const parsed = JSON.parse(raw); return typeof parsed === "string" ? parsed : undefined; }
-    catch { return undefined; }
-  };
-  const converter = scalar("converter");
-  if (converter !== "steipete/summarize") return invalid("must declare converter steipete/summarize.");
-  const converterVersion = scalar("converter_version");
-  const versionMatch = converterVersion?.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!versionMatch) return invalid("lacks a stable converter_version.");
-  const version = versionMatch.slice(1).map(BigInt);
-  const supported = version.some((part, index) => part > minimumSummarizeVersion[index] && version.slice(0, index).every((prior, priorIndex) => prior === minimumSummarizeVersion[priorIndex]));
-  if (!supported && !version.every((part, index) => part === minimumSummarizeVersion[index])) return invalid("requires Summarize 0.21.11 or newer.");
-  if (!scalar("original_source")) return invalid("lacks original_source provenance.");
-  if (scalar("canonical_markdown_path") !== expectedPath) return invalid(`must declare canonical_markdown_path ${expectedPath}.`);
-  const convertedAt = scalar("converted_at");
-  if (!convertedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(convertedAt) || Number.isNaN(Date.parse(convertedAt))) return invalid("lacks a valid UTC converted_at timestamp.");
-  const sourcePath = scalar("source_path");
-  const sourceUrl = scalar("source_url");
-  if (Boolean(sourcePath) === Boolean(sourceUrl)) return invalid("must declare exactly one source_path or source_url.");
-  if (sourcePath && !path.isAbsolute(sourcePath)) return invalid("source_path must be absolute.");
-  if (sourceUrl && !isHttpUrl(sourceUrl)) return invalid("source_url must be absolute HTTP(S) without credentials.");
-  const sourceHash = scalar("source_sha256");
-  if (sourcePath && (!sourceHash || !hashPattern.test(sourceHash))) return invalid("local sources require a valid source_sha256.");
-  const line = hashLines[0];
-  const raw = line.slice(line.indexOf(":") + 1).trim();
-  let declared = raw;
-  if (raw.startsWith('"')) {
-    try { declared = JSON.parse(raw); } catch { return invalid("has malformed markdown_body_sha256 provenance."); }
+  if (type === "pdf") {
+    if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") return invalid("is not a PDF file.");
+  } else {
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+    catch { return invalid("is not valid UTF-8 text."); }
+    if (!text.trim()) return invalid("is empty.");
   }
-  if (typeof declared !== "string" || !hashPattern.test(declared)) return invalid("has malformed markdown_body_sha256 provenance.");
-  const body = value.slice(end + closing.length);
-  const candidates = body.startsWith("\n") ? [body, body.slice(1)] : [body];
-  if (!candidates.some((candidate) => sha256(candidate) === declared)) return invalid("body does not match its markdown_body_sha256 provenance.");
-  return { hash: declared };
+  return { hash: sha256(bytes) };
 }
 
 function isHttpUrl(value) {
@@ -213,13 +176,13 @@ function validateHashSnapshot(snapshot, referencedIds, currentHashes, label, sou
   requireObject(snapshot, label);
   const expected = [...referencedIds].sort();
   const actual = Object.keys(snapshot).sort();
-  if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) fail(`${label} must contain exactly the referenced canonical source IDs`);
+  if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) fail(`${label} must contain exactly the referenced source IDs`);
   const staleReasons = [];
   for (const id of actual) {
     requireId(id, `${label} source ID`);
     requireHash(snapshot[id], `${label}.${id}`);
     if (sourceProblems.has(id)) staleReasons.push(sourceProblems.get(id));
-    else if (!currentHashes.has(id)) staleReasons.push(`Source ${id} is no longer in the knowledge bank.`);
+    else if (!currentHashes.has(id)) staleReasons.push(`Source ${id} is no longer available.`);
     else if (currentHashes.get(id) !== snapshot[id]) staleReasons.push(`Source ${id} changed after this content was created.`);
   }
   return staleReasons;
@@ -298,16 +261,10 @@ function validateCitation(citation, label) {
   requireObject(citation, label);
   requireId(citation.id, `${label} ID`);
   optionalText(citation.note, `${label} note`);
-  if (citation.kind === "canonical") {
-    onlyKeys(citation, ["id", "kind", "sourceId", "locator", "note"], label);
-    requireId(citation.sourceId, `${label} source ID`);
-    requireText(citation.locator, `${label} locator`);
-  } else if (citation.kind === "external") {
-    onlyKeys(citation, ["id", "kind", "label", "href", "note"], label);
-    requireText(citation.label, `${label} label`);
-    requireText(citation.href, `${label} href`);
-    if (!isHttpsUrl(citation.href)) fail(`${label} href must be absolute HTTPS without credentials`);
-  } else fail(`${label} kind must be canonical or external`);
+  if (citation.kind !== "source") fail(`${label} kind must be source`);
+  onlyKeys(citation, ["id", "kind", "sourceId", "locator", "note"], label);
+  requireId(citation.sourceId, `${label} source ID`);
+  requireText(citation.locator, `${label} locator`);
 }
 
 function validateSections(sections, citations, label, purposeRequired = true) {
@@ -321,7 +278,7 @@ function validateSections(sections, citations, label, purposeRequired = true) {
   }
   const sectionIds = new Set();
   const usedCitations = new Set();
-  const canonicalSources = new Set();
+  const sourceIds = new Set();
   for (const section of sections) {
     requireObject(section, `${label} section`);
     onlyKeys(section, ["id", "title", "kind", "purpose", "markdown", "citationIds"], `${label} section`);
@@ -329,7 +286,7 @@ function validateSections(sections, citations, label, purposeRequired = true) {
     if (sectionIds.has(section.id)) fail(`${label} section IDs must be unique: ${section.id}`);
     sectionIds.add(section.id);
     requireText(section.title, `${label} section title (${section.id})`);
-    if (!new Set(["canonical", "external", "conflict"]).has(section.kind)) fail(`${label} section kind is invalid: ${section.kind}`);
+    if (!new Set(["source", "conflict"]).has(section.kind)) fail(`${label} section kind is invalid: ${section.kind}`);
     if (purposeRequired && section.purpose === undefined) fail(`${label} section purpose is required: ${section.id}`);
     if (section.purpose !== undefined && !new Set(["lesson", "review", "remediation", "answer"]).has(section.purpose)) fail(`${label} section purpose is invalid: ${section.purpose}`);
     validateMarkdown(section.markdown, `${label} section markdown (${section.id})`);
@@ -340,15 +297,13 @@ function validateSections(sections, citations, label, purposeRequired = true) {
       const citation = byCitation.get(id);
       if (!citation) fail(`${label} section references unknown citation: ${id}`);
       usedCitations.add(id);
-      if (citation.kind === "canonical") canonicalSources.add(citation.sourceId);
+      if (citation.kind === "source") sourceIds.add(citation.sourceId);
       return citation;
     });
-    if (section.kind === "canonical" && sectionCitations.some(({ kind }) => kind !== "canonical")) fail(`${label} canonical section cannot cite external evidence: ${section.id}`);
-    if (section.kind === "external" && !sectionCitations.some(({ kind }) => kind === "external")) fail(`${label} external section requires an external citation: ${section.id}`);
     if (section.kind === "conflict" && sectionCitations.length < 2) fail(`${label} conflict section requires at least two citations: ${section.id}`);
   }
   if (citations.some(({ id }) => !usedCitations.has(id))) fail(`${label} contains an unused citation`);
-  return canonicalSources;
+  return sourceIds;
 }
 
 function validateArtifactMetadata(metadata) {
@@ -374,8 +329,8 @@ async function loadArtifact(topicRoot, metadata, graphIds, currentHashes, source
   onlyKeys(artifact, ["id", "conceptId", "kind", "title", "summary", "updatedAt", "sourceHashes", "sections", "citations"], `artifact ${metadata.id}`);
   for (const field of ["id", "conceptId", "kind", "title", "summary", "updatedAt"]) if (artifact[field] !== metadata[field]) fail(`artifact ${metadata.id} ${field} must match topic.json metadata`);
   if (!Array.isArray(artifact.sections) || !artifact.sections.length) fail(`artifact ${metadata.id} requires at least one section`);
-  const canonicalSources = validateSections(artifact.sections, artifact.citations, `artifact ${metadata.id}`);
-  const staleReasons = validateHashSnapshot(artifact.sourceHashes, canonicalSources, currentHashes, `artifact ${metadata.id} sourceHashes`, sourceProblems);
+  const sourceIds = validateSections(artifact.sections, artifact.citations, `artifact ${metadata.id}`);
+  const staleReasons = validateHashSnapshot(artifact.sourceHashes, sourceIds, currentHashes, `artifact ${metadata.id} sourceHashes`, sourceProblems);
   return { id: artifact.id, conceptId: artifact.conceptId, kind: artifact.kind, title: artifact.title, summary: artifact.summary, updatedAt: artifact.updatedAt, stale: Boolean(staleReasons.length), staleReasons, sections: artifact.sections, citations: artifact.citations };
 }
 
@@ -412,22 +367,23 @@ async function loadTopic(outputRoot, ref) {
     if (sourceIds.has(source.id)) fail(`source IDs must be unique: ${source.id}`);
     sourceIds.add(source.id);
     requireText(source.title, `source title (${source.id})`);
-    requireText(source.type, `source type (${source.id})`);
+    if (!new Set(["text", "pdf"]).has(source.type)) fail(`source type must be text or pdf: ${source.id}`);
     optionalText(source.author, `source author (${source.id})`);
     optionalText(source.locator, `source locator (${source.id})`);
     requireDate(source.addedAt, `source addedAt (${source.id})`);
     requireRelativePath(source.path, `source path (${source.id})`);
-    if (source.path !== `knowledge_bank/${source.id}.md`) fail(`source path must be knowledge_bank/${source.id}.md`);
+    const expectedPath = `sources/${source.id}.${source.type === "pdf" ? "pdf" : "txt"}`;
+    if (source.path !== expectedPath) fail(`source path must be ${expectedPath}`);
     let file;
     try { file = await existingPath(topicRoot, source.path, `source path (${source.id})`); }
     catch (error) {
       if (error.code !== "ENOENT") throw error;
-      sourceProblems.set(source.id, `Source ${source.id} is registered but its canonical Markdown file is missing.`);
+      sourceProblems.set(source.id, `Source ${source.id} is registered but its file is missing.`);
     }
-    const provenance = file ? inspectCanonicalMarkdown(await readUtf8(file), `Source ${source.id}`, source.path) : { problem: sourceProblems.get(source.id) };
-    if (provenance.hash) currentHashes.set(source.id, provenance.hash);
-    else sourceProblems.set(source.id, provenance.problem);
-    sources.push({ id: source.id, title: source.title, type: source.type, author: source.author, locator: source.locator, addedAt: source.addedAt, ...(file ? { href: localHref(outputRoot, file) } : {}), ...(provenance.problem ? { integrityProblem: provenance.problem } : {}) });
+    const inspection = file ? inspectSource(await readFile(file), source.type, `Source ${source.id}`) : { problem: sourceProblems.get(source.id) };
+    if (inspection.hash) currentHashes.set(source.id, inspection.hash);
+    else sourceProblems.set(source.id, inspection.problem);
+    sources.push({ id: source.id, title: source.title, type: source.type, author: source.author, locator: source.locator, addedAt: source.addedAt, ...(file ? { href: localHref(outputRoot, file) } : {}), ...(inspection.problem ? { integrityProblem: inspection.problem } : {}) });
   }
   const graphResult = validateGraph(graphDoc.value, knownState.conceptIds, currentHashes, "concept graph", sourceProblems);
   const graphIds = new Set(graphResult.graph.nodes.map(({ id }) => id));
@@ -634,14 +590,27 @@ async function check() {
   assert.throws(() => validateMarkdown('[label](https://example.com "title")', "test markdown"), /without titles/);
   validateMarkdown("```html\n<script>example()</script>\n```", "test markdown");
   validateMarkdown("```text\n~~~ literal\n  ``` literal\n```", "test markdown");
-  assert.match(inspectCanonicalMarkdown("# Missing provenance", "Source test").problem, /provenance/);
-  const tinyBody = "# Body\n", tinyHash = sha256(tinyBody), tinyPath = "knowledge_bank/test.md";
-  const tinyHeader = `---\noriginal_source: "input.md"\nsource_path: "/tmp/input.md"\ncanonical_markdown_path: "${tinyPath}"\nconverted_at: "2026-09-05T12:00:00Z"\nsource_sha256: "${"b".repeat(64)}"\nconverter: "steipete/summarize"\nconverter_version: "0.21.11"\nmarkdown_body_sha256: "${tinyHash}"\n---\n`;
-  assert.equal(inspectCanonicalMarkdown(tinyHeader + tinyBody, "Source test", tinyPath).hash, tinyHash);
-  assert.equal(inspectCanonicalMarkdown(`${tinyHeader}\n${tinyBody}`, "Source test", tinyPath).hash, tinyHash);
-  assert.match(inspectCanonicalMarkdown(tinyHeader.replace("steipete/summarize", "other"), "Source test", tinyPath).problem, /steipete\/summarize/);
-  assert.match(inspectCanonicalMarkdown(tinyHeader.replace("0.21.11", "0.21.10"), "Source test", tinyPath).problem, /0\.21\.11/);
-  assert.match(inspectCanonicalMarkdown(tinyHeader.replace('original_source: "input.md"\n', ""), "Source test", tinyPath).problem, /original_source/);
+  const tinyText = Buffer.from("Direct text source.\n");
+  const pdfObjects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const pdfOffsets = [0];
+  for (const [index, body] of pdfObjects.entries()) {
+    pdfOffsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${pdfObjects.length + 1}\n0000000000 65535 f \n${pdfOffsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${pdfObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  const tinyPdf = Buffer.from(pdf);
+  assert.equal(inspectSource(tinyText, "text", "Text source").hash, sha256(tinyText));
+  assert.equal(inspectSource(tinyPdf, "pdf", "PDF source").hash, sha256(tinyPdf));
+  assert.match(inspectSource(Buffer.from(" \n"), "text", "Text source").problem, /empty/);
+  assert.match(inspectSource(Buffer.from([0xff]), "text", "Text source").problem, /UTF-8/);
+  assert.match(inspectSource(Buffer.from("not a pdf"), "pdf", "PDF source").problem, /not a PDF/);
+  assert.throws(() => validateCitation({ id: "web", kind: "web" }, "citation"), /kind must be source/);
   const executableScripts = [...template.matchAll(/<script(?![^>]*type=["']application\/json["'])[^>]*>([\s\S]*?)<\/script>/g)];
   assert.equal(executableScripts.length, 1);
   new Function(executableScripts[0][1]);
@@ -649,22 +618,25 @@ async function check() {
   try {
     const workspaceRoot = path.join(root, "workspace");
     const topicRoot = path.join(workspaceRoot, "projects", "p", "topics", "t");
-    const sourceBody = "# Canonical source\n\nUnique source body that must not be embedded.\n";
-    const sourceHash = sha256(sourceBody);
-    const source = `---\noriginal_source: "input.md"\nsource_path: "${path.join(root, "input.md")}"\ncanonical_markdown_path: "knowledge_bank/source.md"\nconverted_at: "2026-09-05T12:00:00Z"\nsource_sha256: "${"b".repeat(64)}"\nconverter: "steipete/summarize"\nconverter_version: "0.21.11"\nmarkdown_body_sha256: "${sourceHash}"\n---\n\n${sourceBody}`;
-    const graph = { nodes: [{ id: "basics", label: "Basics", description: "The foundation.", evidence: [{ sourceId: "source", locator: "Heading 1" }] }], edges: [], sourceHashes: { source: sourceHash } };
+    const sourceBody = "Direct source text that must not be embedded.\n";
+    const sourceBytes = Buffer.from(sourceBody);
+    const sourceHash = sha256(sourceBytes);
+    const pdfBytes = tinyPdf;
+    const graph = { nodes: [{ id: "basics", label: "Basics", description: "The foundation.", evidence: [{ sourceId: "source", locator: "Line 1" }] }], edges: [], sourceHashes: { source: sourceHash } };
     const known = { conceptIds: [] };
-    const topic = { title: "Topic", eyebrow: "Test", summary: "Integration fixture.", updatedAt: "2026-09-05", graphReconciliationRequired: false, sources: [{ id: "source", title: "Source", type: "markdown", addedAt: "2026-09-05", path: "knowledge_bank/source.md" }], artifacts: [{ id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", path: "artifacts/basics.json" }] };
-    const artifact = { id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", sourceHashes: { source: sourceHash }, sections: [{ id: "lesson", title: "Lesson", kind: "canonical", purpose: "lesson", markdown: "Safe text with a [reference](https://example.com).", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "canonical", sourceId: "source", locator: "Heading 1" }] };
-    await mkdir(path.join(topicRoot, "knowledge_bank"), { recursive: true });
+    const topic = { title: "Topic", eyebrow: "Test", summary: "Integration fixture.", updatedAt: "2026-09-05", graphReconciliationRequired: false, sources: [{ id: "source", title: "Text source", type: "text", addedAt: "2026-09-05", path: "sources/source.txt" }, { id: "paper", title: "PDF source", type: "pdf", addedAt: "2026-09-05", path: "sources/paper.pdf" }], artifacts: [{ id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", path: "artifacts/basics.json" }] };
+    const artifact = { id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", sourceHashes: { source: sourceHash }, sections: [{ id: "lesson", title: "Lesson", kind: "source", purpose: "lesson", markdown: "Safe text with a [reference](https://example.com).", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "source", sourceId: "source", locator: "Line 1" }] };
+    await mkdir(path.join(topicRoot, "sources"), { recursive: true });
     await mkdir(path.join(topicRoot, "artifacts"), { recursive: true });
     const topicText = JSON.stringify(topic), graphText = JSON.stringify(graph), knownText = JSON.stringify(known);
     await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
     await writeFile(path.join(topicRoot, "topic.json"), topicText);
     await writeFile(path.join(topicRoot, "concept_graph.json"), graphText);
     await writeFile(path.join(topicRoot, "known_set.json"), knownText);
-    const sourceFile = path.join(topicRoot, "knowledge_bank", "source.md");
-    await writeFile(sourceFile, source);
+    const sourceFile = path.join(topicRoot, "sources", "source.txt");
+    const pdfFile = path.join(topicRoot, "sources", "paper.pdf");
+    await writeFile(sourceFile, sourceBytes);
+    await writeFile(pdfFile, pdfBytes);
     await writeFile(path.join(topicRoot, "artifacts", "basics.json"), JSON.stringify(artifact));
     const { outputRoot, html } = await render(workspaceRoot, undefined, undefined, true);
     assert.deepEqual(await readdir(outputRoot), ["index.html"]);
@@ -675,15 +647,24 @@ async function check() {
     const payload = JSON.parse(match[1]);
     assert.equal(payload.topics.length, 1);
     assert.equal(payload.topics[0].artifacts[0].stale, false);
+    assert.equal(payload.topics[0].sources.length, 2);
     assert.match(payload.topics[0].sources[0].href, /^\.\.\//);
-    assert.equal(fileURLToPath(new URL(payload.topics[0].sources[0].href, pathToFileURL(path.join(outputRoot, "index.html")))), await realpath(path.join(topicRoot, "knowledge_bank", "source.md")));
+    assert.equal(fileURLToPath(new URL(payload.topics[0].sources[0].href, pathToFileURL(path.join(outputRoot, "index.html")))), await realpath(sourceFile));
+    assert.equal(fileURLToPath(new URL(payload.topics[0].sources[1].href, pathToFileURL(path.join(outputRoot, "index.html")))), await realpath(pdfFile));
+    await writeFile(path.join(topicRoot, "topic.json"), JSON.stringify({ ...topic, sources: [{ ...topic.sources[0], type: "url" }] }));
+    await assert.rejects(render(workspaceRoot, undefined, undefined, true), /source type must be text or pdf/);
+    await writeFile(path.join(topicRoot, "topic.json"), topicText);
+    await writeFile(sourceFile, Buffer.concat([sourceBytes, Buffer.from("changed\n")]));
+    const changed = await render(workspaceRoot, undefined, undefined, true);
+    assert.equal(JSON.parse(changed.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).topics[0].artifacts[0].stale, true);
+    await writeFile(sourceFile, sourceBytes);
     await rm(sourceFile);
     const missing = await render(workspaceRoot, undefined, undefined, true);
     const missingPayload = JSON.parse(missing.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]);
     assert.match(missingPayload.topics[0].sources[0].integrityProblem, /missing/);
     assert.equal(missingPayload.topics[0].reconciliationRequired, true);
     assert.equal(missingPayload.topics[0].artifacts[0].stale, true);
-    await writeFile(sourceFile, source);
+    await writeFile(sourceFile, sourceBytes);
     await render(workspaceRoot, undefined, undefined, true);
     const renderedBeforeRejectedInputs = await readFile(path.join(outputRoot, "index.html"));
     const nestedRoot = path.join(topicRoot, "nested");
@@ -702,7 +683,7 @@ async function check() {
     const previewRoot = path.join(root, "preview");
     const sessionPath = path.join(previewRoot, "session.json");
     await mkdir(previewRoot);
-    const session = { active: true, kind: "answer", target: { projectId: "p", topicId: "t" }, title: "Safe preview", baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(topicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "answer", title: "Answer", kind: "canonical", purpose: "answer", markdown: "A current answer.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "canonical", sourceId: "source", locator: "Heading 1" }] };
+    const session = { active: true, kind: "answer", target: { projectId: "p", topicId: "t" }, title: "Safe preview", baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(topicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "answer", title: "Answer", kind: "source", purpose: "answer", markdown: "A current answer.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "source", sourceId: "source", locator: "Line 1" }] };
     await writeFile(sessionPath, JSON.stringify({ ...session, target: { projectId: "p", topicId: "wrong" } }));
     await assert.rejects(render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true), /session target must exactly match workspace current/);
     await writeFile(sessionPath, JSON.stringify(session));
@@ -714,12 +695,12 @@ async function check() {
     assert.equal(JSON.parse(stalePreview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).session.stale, true);
     const reconcilingTopicText = JSON.stringify({ ...topic, graphReconciliationRequired: true });
     await writeFile(path.join(topicRoot, "topic.json"), reconcilingTopicText);
-    const graphSession = { active: true, kind: "graph-proposal", target: { projectId: "p", topicId: "t" }, baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(reconcilingTopicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "proposal", title: "Proposal", kind: "canonical", markdown: "A grounded graph proposal.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "canonical", sourceId: "source", locator: "Heading 1" }], proposedGraph: graph, proposedKnownSet: [] };
+    const graphSession = { active: true, kind: "graph-proposal", target: { projectId: "p", topicId: "t" }, baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(reconcilingTopicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "proposal", title: "Proposal", kind: "source", markdown: "A grounded graph proposal.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "source", sourceId: "source", locator: "Line 1" }], proposedGraph: graph, proposedKnownSet: [] };
     await writeFile(sessionPath, JSON.stringify(graphSession));
     const graphPreview = await render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true);
     const graphPayload = JSON.parse(graphPreview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]);
     assert.equal(graphPayload.session.stale, false);
-    assert.equal(graphPayload.session.proposedGraph.nodes[0].evidence[0].locator, "Heading 1");
+    assert.equal(graphPayload.session.proposedGraph.nodes[0].evidence[0].locator, "Line 1");
     const emptyRoot = path.join(root, "empty");
     await mkdir(emptyRoot);
     await writeFile(path.join(emptyRoot, "workspace.json"), JSON.stringify({ name: "Empty", current: null, projects: [] }));

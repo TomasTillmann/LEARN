@@ -92,7 +92,6 @@
     .callout { margin: 20px 0; padding: 12px 14px; border-left: 4px solid var(--warning); border-radius: 4px; background: #332e24; color: #f4dfb7; }
     .callout.danger { border-color: var(--danger); background: #392626; color: #ffd0d0; }
     .content-section { margin: 34px 0; padding: 1px 0 1px 18px; border-left: 4px solid var(--known); }
-    .content-section.external { border-color: var(--warning); background: linear-gradient(90deg, #332e2488, transparent 60%); }
     .content-section.conflict { border-color: var(--danger); background: linear-gradient(90deg, #39262688, transparent 60%); }
     .section-label, .badge { display: inline-block; margin: 0 5px 8px 0; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 650; text-transform: capitalize; }
     blockquote { padding-left: 14px; border-left: 3px solid var(--border); color: var(--muted); }
@@ -191,7 +190,7 @@
       const topicFor = (projectId, topicId) => data.topics.find(topic => topic.projectId === projectId && topic.id === topicId);
       const projectFor = id => data.workspace.projects.find(project => project.id === id);
       const sourceFor = (topic, id) => topic.sources.find(source => source.id === id);
-      const safeExternal = value => { try { const url = new URL(text(value)); return url.protocol === "https:" && !url.username && !url.password ? url.href : null; } catch { return null; } };
+      const safeHttps = value => { try { const url = new URL(text(value)); return url.protocol === "https:" && !url.username && !url.password ? url.href : null; } catch { return null; } };
       const safeLocal = value => { if (typeof value !== "string" || !value) return null; try { const url = new URL(value, document.baseURI); return url.protocol === "file:" ? url.href : null; } catch { return null; } };
 
       function defaultRoute() {
@@ -345,7 +344,7 @@
           else if (token.startsWith("**") || token.startsWith("__")) host.append(node("strong", { text: token.slice(2, -2) }));
           else if (token.startsWith("[")) {
             const parts = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-            const href = safeExternal(parts[2]);
+            const href = safeHttps(parts[2]);
             host.append(href ? node("a", { href, target: "_blank", rel: "noopener noreferrer", text: parts[1] }) : document.createTextNode(parts[1]));
           } else host.append(node("em", { text: token.slice(1, -1) }));
           last = match.index + token.length;
@@ -399,16 +398,10 @@
 
       function citationNode(citation, topic) {
         const item = node("li");
-        if (citation.kind === "canonical") {
-          const source = sourceFor(topic, citation.sourceId);
-          const href = source && safeLocal(source.href);
-          item.append(href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || citation.sourceId }));
-          item.append(document.createTextNode(` — ${citation.locator}${citation.note ? ` · ${citation.note}` : ""}`));
-        } else {
-          const href = safeExternal(citation.href);
-          item.append(href ? node("a", { href, target: "_blank", rel: "noopener noreferrer", text: citation.label }) : node("strong", { text: citation.label }));
-          if (citation.note) item.append(document.createTextNode(` — ${citation.note}`));
-        }
+        const source = sourceFor(topic, citation.sourceId);
+        const href = source && safeLocal(source.href);
+        item.append(href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || citation.sourceId }));
+        item.append(document.createTextNode(` — ${citation.locator}${citation.note ? ` · ${citation.note}` : ""}`));
         return item;
       }
 
@@ -521,17 +514,17 @@
       }
 
       function renderSources(topic) {
-        const host = node("article", { class: "document" }, node("h1", { text: "Sources" }), node("p", { class: "lede", text: `Canonical knowledge bank for ${topic.title}. Source content stays in its Markdown file and is not duplicated into this page.` }));
+        const host = node("article", { class: "document" }, node("h1", { text: "Sources" }), node("p", { class: "lede", text: `Text and PDF sources for ${topic.title}. Source content is not duplicated into this page.` }));
         const list = node("ul", { class: "cards" });
         topic.sources.forEach(source => {
           const href = safeLocal(source.href);
           const detail = [source.type, source.author, source.locator, `added ${source.addedAt}`].filter(Boolean).join(" · ");
           const content = node("div", { class: "card source-card" }, node("strong", { text: source.title }), node("small", { text: detail }));
           if (source.integrityProblem) content.append(node("p", { class: "source-problem", role: "alert", text: source.integrityProblem }));
-          if (href) content.append(node("p", {}, node("a", { href, target: "_blank", rel: "noopener", text: "Open canonical Markdown" })));
+          if (href) content.append(node("p", {}, node("a", { href, target: "_blank", rel: "noopener", text: "Open source" })));
           list.append(node("li", {}, content));
         });
-        host.append(topic.sources.length ? list : node("div", { class: "empty", text: "No canonical sources yet. Add one in chat." })); main.append(host);
+        host.append(topic.sources.length ? list : node("div", { class: "empty", text: "No sources yet. Add text or a PDF in chat." })); main.append(host);
       }
 
       function renderConcept(topic, id) {
