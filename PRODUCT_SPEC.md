@@ -152,7 +152,7 @@ The known set contains the concepts currently marked understood. It must always 
 
 ### Learning artifacts
 
-A concept may have one evolving HTML learning artifact. After every graph approval, one fresh background artifact specialist per concept regenerates all “teach me” artifacts in parallel. Later learning, review, and substantive questions may update them until the next approved graph replaces them from the current bank.
+A concept may have one evolving HTML learning artifact. Graph approval does not generate artifacts. A new topic starts with none; the agent creates or regenerates only the artifact for a concept the learner explicitly asks to learn, study, review, or be taught. An explicit request may name several concepts.
 
 The stable workspace behaves like a note graph: selecting a concept node opens the artifact with the matching `conceptId`. If the artifact does not exist, the note pane remains otherwise blank and shows the muted prompt `Generate learning materials in chat.`
 
@@ -210,7 +210,7 @@ For a new topic, the agent:
 3. Stops without creating a graph if the selected material cannot be parsed reliably.
 4. Derives a grounded concept and prerequisite graph.
 5. Shows the graph in HTML and asks the learner to approve or correct it.
-6. After approval, spawns one fresh background learning-artifact sub-agent per concept and generates every “teach me” artifact in parallel, bounded only by available concurrency.
+6. After approval, leaves learning artifacts empty until the learner requests one.
 7. Establishes the initial known set through a knowledge-boundary finder, direct learner declarations, or an explicitly empty known set.
 8. Shows the current graph, known set, and learning frontier in HTML.
 
@@ -368,6 +368,8 @@ In a few sentences, state what is being done and mention whether persistent stat
 Always tell the learner what was persisted, including automatic graph or known-set consequences. Keep this short but specific.
 
 Every learner-facing response ends with a contextual numbered list of available actions, such as learning a new concept, revising one, taking a knowledge-boundary quiz, asking a grounded question, or changing sources.
+
+When an HTML result or proposal is ready, its clickable link comes first. A graph-proposal message then gives one direct sentence followed by its numbered actions; it does not repeat source or topic background already visible in the proposal.
 
 ### Examples
 
@@ -860,7 +862,7 @@ An implementation conforms only if all of these remain true:
 30. Activation starts or reuses the localhost workspace server and gives the learner its clickable address.
 31. Every learner-facing response ends with a contextual numbered list of next actions.
 32. Every graph proposal uses a fresh graph specialist.
-33. Every graph approval triggers parallel “teach me” regeneration for every concept without changing the known set.
+33. Graph approval never generates learning artifacts; concept artifacts are created on explicit learner request.
 
 ## 19. Agent execution checklist
 
@@ -977,13 +979,11 @@ The artifact sub-agent:
 - never communicates directly with the learner;
 - ends after returning the requested content.
 
-The artifact sub-agent must not use an existing artifact as factual or semantic input. For an extension, it creates a self-contained new section from the current knowledge bank; the session manager appends it mechanically. For a full replacement requested by the learner, it creates a new complete artifact from the bank.
+The artifact sub-agent must not use an existing artifact as factual or semantic input. For an extension, it creates a self-contained new section from the current knowledge bank; the session manager appends it mechanically. For a full replacement requested by the learner, it creates a new complete artifact from the bank. Graph approval never starts artifact sub-agents; concept artifacts are generated only for concepts the learner explicitly requests.
 
 #### Concept-graph sub-agent
 
 The session manager uses a fresh concept-graph sub-agent for every initial graph or reconciliation proposal. It receives current canonical Markdown plus relevant graph and known-set context, and returns one complete grounded acyclic graph proposal. It never persists state or communicates with the learner.
-
-After every graph approval, the session manager immediately spawns one fresh learning-artifact sub-agent per approved concept. It runs them in parallel up to available concurrency, refilling slots until every concept has a fresh artifact grounded in the current bank. The session manager alone persists their results; artifact generation does not change the known set.
 
 ### 20.3 Specialist prompt handoff
 
@@ -1070,7 +1070,7 @@ Do not persist quiz questions, answers, intermediate judgments, spawned-agent co
 2. Activation starts or reuses a localhost workspace server and shares its clickable address.
 3. Every learner-facing response ends with a contextual numbered action list.
 4. Every concept-graph proposal uses a fresh graph sub-agent.
-5. Graph approval triggers one fresh background artifact sub-agent per concept, running in parallel up to available concurrency.
+5. Graph approval does not generate artifacts; an explicit learner request triggers one fresh artifact sub-agent per requested concept.
 6. Every knowledge-boundary quiz uses a fresh quiz sub-agent.
 7. Every revision quiz uses a fresh quiz sub-agent.
 8. The same quiz sub-agent continues for the lifetime of its quiz and is then discarded.

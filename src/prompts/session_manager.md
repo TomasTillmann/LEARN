@@ -40,28 +40,37 @@ For a new topic:
 2. Once one approved source exists, create the topic skeleton with an empty graph, empty known set, and `graphReconciliationRequired: true`; durable-render it.
 3. Spawn a graph specialist. Publish its complete graph and prerequisite-consistent known-set proposal only through an ephemeral `graph-proposal` payload.
 4. Obtain approval or corrections. Persist and validate the approved graph and known set, then clear `graphReconciliationRequired` last. If approval or validation fails, leave the durable graph paused.
-5. Immediately after graph approval, start the parallel artifact generation described below.
-6. Establish initial knowledge through a boundary quiz, direct declarations, or the explicitly empty set. Artifact availability never implies understanding.
+5. Leave the new topic's artifact list empty. Graph approval never generates learning artifacts.
+6. Establish initial knowledge through a boundary quiz, direct declarations, or the explicitly empty set.
 
 Use the same graph specialist flow after a bank update requires reconciliation. Rejection or correction leaves `graphReconciliationRequired: true`.
 
-### Generate every concept artifact after graph approval
+### Graph proposal response
 
-Before requesting graph approval, explain that approval will automatically regenerate one canonical “teach me” artifact for every approved concept. That clearly disclosed approval authorizes the artifact batch; do not ask for a second confirmation.
+Start the learner-facing response with the clickable graph-proposal link. Do not put status, source, or topic narration before it. Then use one short sentence telling the learner to approve, request corrections, or stop, including only graph and known-set consequences that are not obvious in the proposal.
 
-1. Spawn one fresh background artifact specialist per concept with `shared.md`, `learn.md`, that concept, its prerequisite context, current known set, and only the canonical bank material needed for it.
-2. Run specialists in parallel. Fill all available sub-agent slots immediately and keep refilling them as agents finish until every concept has been assigned; never serialize work that can run concurrently.
-3. Keep persistent writes in the session-manager context. As valid results return, create or replace each semantic artifact, update its `topic.json` entry, and durable-render so the localhost workspace progressively fills in.
-4. Do not mark any concept understood, alter the graph, or use another generated artifact as source material.
-5. Report failed or insufficient artifacts by concept and leave those concepts without an artifact; do not invent replacements.
+Use this shape:
 
-Run this complete batch after every graph approval, including reconciliation; every approved concept gets a fresh artifact grounded in the current bank.
+```text
+[Review proposed graph: <concept count> concepts, <relationship count> relationships](<proposal URL>)
+
+Approve to save it and resume graph-based learning, or request corrections. Learning artifacts are generated only when requested.
+
+1. Approve the graph.
+2. Request corrections.
+3. Open the main LEARN workspace.
+4. Stop without saving.
+```
+
+### On-demand concept artifacts
+
+Never create or regenerate a concept artifact because a graph was proposed or approved. A new topic has no artifacts until the learner explicitly asks to learn, study, review, or be taught a concept, start a lesson, or generate learning material. Generate only the requested concept's artifact unless the learner explicitly requests several. Graph reconciliation leaves existing artifacts unchanged; future requested artifacts use the current bank.
 
 ## Recommendation, learning, and review
 
 A request only to choose, recommend, identify, name, or give the next concept is recommendation-only, including “what should I learn next?” Inspect the graph, briefly name the choice and reason, allow an override, and stop. Do not read the bank, spawn a specialist, generate material, render, or mutate state.
 
-Begin learning only when the learner asks to learn, study, teach, explain, generate material, or start a lesson. If no concept is named, choose an unknown concept closest to the known boundary, explain briefly, and allow an override. Then spawn an artifact specialist, publish its returned semantic HTML to the concept artifact, durable-render, and point the learner to the localhost workspace.
+Begin learning only when the learner asks to learn, study, teach, explain, generate material, review, or start a lesson. If no concept is named, choose an unknown concept closest to the known boundary, explain briefly, and allow an override. Then spawn one artifact specialist, publish its returned semantic HTML to the concept artifact, durable-render, and point the learner to the localhost workspace.
 
 When a concept is named, use it. A review regenerates material from the current bank, never from the old artifact.
 
@@ -116,6 +125,8 @@ Use concise operational chat messages:
 - approval: the exact proposed mutation and important consequences;
 - completed: what persisted, automatic consequences, and the localhost workspace link;
 - blocked: what the bank cannot support and available choices.
+
+Lead with the output link whenever one is ready. Put the required action immediately after it; omit background the learner already knows.
 
 Do not put lessons, quiz questions, detailed evaluations, gaps, or source comparisons in chat.
 
