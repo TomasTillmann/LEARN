@@ -1,28 +1,77 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { readFile, mkdir, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const templatePath = path.resolve(here, "../ui/index.html");
+const idPattern = /^[a-z0-9][a-z0-9_-]*$/;
+const hashPattern = /^[a-f0-9]{64}$/;
+const minimumSummarizeVersion = [0n, 21n, 11n];
 
 function fail(message) {
   throw new Error(`LEARN renderer: ${message}`);
 }
 
-function safePath(root, relativePath) {
-  const resolved = path.resolve(root, relativePath);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    fail(`path escapes the workspace: ${relativePath}`);
-  }
-  return resolved;
+function requireObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object`);
 }
 
-async function safeExistingPath(root, relativePath) {
-  const actual = await realpath(safePath(root, relativePath));
-  if (actual !== root && !actual.startsWith(`${root}${path.sep}`)) fail(`symlink escapes the workspace: ${relativePath}`);
+function requireArray(value, label) {
+  if (!Array.isArray(value)) fail(`${label} must be an array`);
+}
+
+function requireText(value, label) {
+  if (typeof value !== "string" || !value.trim()) fail(`${label} must be a non-empty string`);
+}
+
+function optionalText(value, label) {
+  if (value !== undefined) requireText(value, label);
+}
+
+function requireId(value, label) {
+  if (typeof value !== "string" || value.length > 64 || !idPattern.test(value)) fail(`${label} must be 1–64 lowercase letters, digits, hyphens, or underscores and start alphanumeric: ${value}`);
+}
+
+function requireDate(value, label) {
+  requireText(value, label);
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) fail(`${label} must use YYYY-MM-DD: ${value}`);
+}
+
+function requireHash(value, label) {
+  if (typeof value !== "string" || !hashPattern.test(value)) fail(`${label} must be a lowercase SHA-256 hash`);
+}
+
+function onlyKeys(value, allowed, label) {
+  const extra = Object.keys(value).find((key) => !allowed.includes(key));
+  if (extra) fail(`${label} contains unsupported field: ${extra}`);
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function pathsOverlap(left, right) {
+  return isWithin(left, right) || isWithin(right, left);
+}
+
+function requireRelativePath(value, label) {
+  requireText(value, label);
+  if (path.isAbsolute(value) || value.includes("\\") || path.posix.normalize(value) !== value || value === "." || value.startsWith("../")) {
+    fail(`${label} must be a normalized relative path using forward slashes: ${value}`);
+  }
+}
+
+async function existingPath(root, relativePath, label) {
+  requireRelativePath(relativePath, label);
+  const actual = await realpath(path.resolve(root, relativePath));
+  if (!isWithin(root, actual)) fail(`${label} escapes its owner through a path or symlink: ${relativePath}`);
   return actual;
 }
 
@@ -36,96 +85,196 @@ async function canonicalOutputPath(value) {
   }
 }
 
-async function readJson(file) {
-  return JSON.parse(await readFile(file, "utf8"));
+async function readUtf8Document(file) {
+  try {
+    const bytes = await readFile(file);
+    return { text: new TextDecoder("utf-8", { fatal: true }).decode(bytes), hash: createHash("sha256").update(bytes).digest("hex") };
+  } catch (error) {
+    fail(`cannot read UTF-8 file ${file}: ${error.message}`);
+  }
 }
 
-function requireObject(value, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object`);
+async function readUtf8(file) {
+  return (await readUtf8Document(file)).text;
 }
 
-function requireText(value, label) {
-  if (typeof value !== "string" || !value.trim()) fail(`${label} must be a non-empty string`);
+async function readJsonDocument(file) {
+  const { text, hash } = await readUtf8Document(file);
+  try {
+    return { value: JSON.parse(text), text, hash };
+  } catch (error) {
+    fail(`invalid JSON in ${file}: ${error.message}`);
+  }
 }
 
-function optionalText(value, label) {
-  if (value !== undefined && typeof value !== "string") fail(`${label} must be a string`);
+function sha256(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function isHttpsUrl(value) {
+function inspectCanonicalMarkdown(value, label, expectedPath) {
+  const invalid = (reason) => ({ problem: `${label} ${reason}` });
+  const closing = "\n---\n";
+  const end = value.startsWith("---\n") ? value.indexOf(closing, 4) : -1;
+  if (end < 0) return invalid("lacks complete provenance frontmatter.");
+  const lines = value.slice(4, end).split("\n");
+  const hashLines = lines.filter((entry) => entry.startsWith("markdown_body_sha256:"));
+  if (hashLines.length !== 1) return invalid("must contain exactly one markdown_body_sha256 provenance field.");
+  const scalar = (field) => {
+    const matches = lines.filter((entry) => entry.startsWith(`${field}:`));
+    if (matches.length !== 1) return undefined;
+    const raw = matches[0].slice(matches[0].indexOf(":") + 1).trim();
+    if (!raw) return undefined;
+    if (!raw.startsWith('"')) return raw;
+    try { const parsed = JSON.parse(raw); return typeof parsed === "string" ? parsed : undefined; }
+    catch { return undefined; }
+  };
+  const converter = scalar("converter");
+  if (converter !== "steipete/summarize") return invalid("must declare converter steipete/summarize.");
+  const converterVersion = scalar("converter_version");
+  const versionMatch = converterVersion?.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!versionMatch) return invalid("lacks a stable converter_version.");
+  const version = versionMatch.slice(1).map(BigInt);
+  const supported = version.some((part, index) => part > minimumSummarizeVersion[index] && version.slice(0, index).every((prior, priorIndex) => prior === minimumSummarizeVersion[priorIndex]));
+  if (!supported && !version.every((part, index) => part === minimumSummarizeVersion[index])) return invalid("requires Summarize 0.21.11 or newer.");
+  if (!scalar("original_source")) return invalid("lacks original_source provenance.");
+  if (scalar("canonical_markdown_path") !== expectedPath) return invalid(`must declare canonical_markdown_path ${expectedPath}.`);
+  const convertedAt = scalar("converted_at");
+  if (!convertedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(convertedAt) || Number.isNaN(Date.parse(convertedAt))) return invalid("lacks a valid UTC converted_at timestamp.");
+  const sourcePath = scalar("source_path");
+  const sourceUrl = scalar("source_url");
+  if (Boolean(sourcePath) === Boolean(sourceUrl)) return invalid("must declare exactly one source_path or source_url.");
+  if (sourcePath && !path.isAbsolute(sourcePath)) return invalid("source_path must be absolute.");
+  if (sourceUrl && !isHttpUrl(sourceUrl)) return invalid("source_url must be absolute HTTP(S) without credentials.");
+  const sourceHash = scalar("source_sha256");
+  if (sourcePath && (!sourceHash || !hashPattern.test(sourceHash))) return invalid("local sources require a valid source_sha256.");
+  const line = hashLines[0];
+  const raw = line.slice(line.indexOf(":") + 1).trim();
+  let declared = raw;
+  if (raw.startsWith('"')) {
+    try { declared = JSON.parse(raw); } catch { return invalid("has malformed markdown_body_sha256 provenance."); }
+  }
+  if (typeof declared !== "string" || !hashPattern.test(declared)) return invalid("has malformed markdown_body_sha256 provenance.");
+  const body = value.slice(end + closing.length);
+  const candidates = body.startsWith("\n") ? [body, body.slice(1)] : [body];
+  if (!candidates.some((candidate) => sha256(candidate) === declared)) return invalid("body does not match its markdown_body_sha256 provenance.");
+  return { hash: declared };
+}
+
+function isHttpUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
+    return new Set(["http:", "https:"]).has(url.protocol) && Boolean(url.hostname) && !url.username && !url.password;
   } catch {
     return false;
   }
 }
 
-function validateArtifact(artifact) {
-  requireObject(artifact, "artifact metadata");
-  validateId(artifact.id, "artifact ID");
-  validateId(artifact.conceptId, "artifact concept ID");
-  requireText(artifact.title, `artifact title (${artifact.id})`);
-  requireText(artifact.path, `artifact path (${artifact.id})`);
-  for (const field of ["summary", "updatedAt"]) optionalText(artifact[field], `artifact ${field} (${artifact.id})`);
-  if (!Array.isArray(artifact.labels) || !artifact.labels.length || artifact.labels.some((label) => !["canonical", "external", "conflict"].includes(label))) {
-    fail(`artifact labels must be a non-empty array containing only canonical, external, or conflict: ${artifact.id}`);
-  }
-  if (!Array.isArray(artifact.citations) || !artifact.citations.length) fail(`artifact requires citations: ${artifact.id}`);
-  for (const citation of artifact.citations) {
-    requireObject(citation, `citation on artifact ${artifact.id}`);
-    optionalText(citation.note, `citation note on artifact ${artifact.id}`);
-    if (citation.sourceId !== undefined) {
-      validateId(citation.sourceId, `citation source ID on artifact ${artifact.id}`);
-      requireText(citation.locator, `canonical citation locator on artifact ${artifact.id}`);
-      if (citation.href !== undefined || citation.label !== undefined) fail(`canonical citation cannot contain href or label: ${artifact.id}`);
-    } else {
-      requireText(citation.label, `external citation label on artifact ${artifact.id}`);
-      requireText(citation.href, `external citation href on artifact ${artifact.id}`);
-      if (!isHttpsUrl(citation.href)) fail(`external citation href must be an absolute HTTPS URL without credentials: ${artifact.id}`);
-      if (citation.locator !== undefined) fail(`external citation cannot contain locator: ${artifact.id}`);
+function isHttpsUrl(value) {
+  return isHttpUrl(value) && new URL(value).protocol === "https:";
+}
+
+function validateMarkdown(value, label) {
+  requireText(value, label);
+  let prose = "";
+  let fenced = false;
+  const lines = value.replace(/\r\n?/g, "\n").split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!fenced && (/^\s*~~~/.test(line) || /^\s+```/.test(line))) fail(`${label} contains an unsupported code fence`);
+    if (/^```/.test(line)) {
+      if (fenced) {
+        if (!/^```\s*$/.test(line)) { prose += "\n"; continue; }
+      } else if (!/^```[a-z0-9_-]*\s*$/i.test(line)) fail(`${label} contains an unsupported code fence`);
+      fenced = !fenced;
+      continue;
     }
+    if (!fenced && /^\s+(?:[-+*]|\d+[.)])\s+/.test(line)) fail(`${label} cannot contain indented or nested list items`);
+    if (!fenced && /^\s{0,3}(?:=+|-+)\s*$/.test(line) && index > 0 && lines[index - 1].trim() && !/^(?:```|#{1,6}\s|>\s?|\s*[-+*]\s+|\s*\d+[.)]\s+)/.test(lines[index - 1])) fail(`${label} cannot contain setext headings`);
+    if (!fenced) prose += `${line.replace(/`[^`\n]*`/g, "")}\n`;
+  }
+  if (fenced) fail(`${label} contains an unclosed fenced code block`);
+  if (/<!--|<\/?[A-Za-z][^>]*>/s.test(prose)) fail(`${label} cannot contain raw HTML`);
+  if (/^#{1,2}\s|^#{5,6}\s/m.test(prose)) fail(`${label} headings must use H3 or H4`);
+  if (/^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/m.test(prose)) fail(`${label} cannot contain tables`);
+  for (const match of prose.matchAll(/!?\[[^\]\n]*\]\([^\n)]*\)/g)) {
+    if (match[0].startsWith("!")) fail(`${label} cannot contain images`);
+    const link = match[0].match(/^\[[^\]\n]+\]\(([^)\s]+)\)$/);
+    if (!link || !isHttpsUrl(link[1])) fail(`${label} links must use bare absolute HTTPS URLs without titles`);
   }
 }
 
-function validateGraph(nodes, edges, knownSet, sourceIds, allowMissingSources = false) {
-  if (!Array.isArray(nodes) || !Array.isArray(edges) || !Array.isArray(knownSet)) fail("graph nodes, edges, and known set must be arrays");
-  for (const node of nodes) {
-    requireObject(node, "concept");
-    if (Object.keys(node).some((key) => !["id", "label", "description", "sourceIds"].includes(key))) fail(`concept contains a non-semantic field: ${node.id}`);
-    validateId(node.id, "concept ID");
-    requireText(node.label, `concept label (${node.id})`);
-    requireText(node.description, `concept description (${node.id})`);
-    if (!Array.isArray(node.sourceIds) || !node.sourceIds.length) fail(`concept is not grounded in a source: ${node.id}`);
-    for (const sourceId of node.sourceIds) {
-      validateId(sourceId, `source ID on concept ${node.id}`);
-      if (!allowMissingSources && !sourceIds.has(sourceId)) fail(`concept references an unknown source: ${node.id} -> ${sourceId}`);
-    }
-  }
-  const ids = new Set(nodes.map(({ id }) => id));
-  if (ids.size !== nodes.length) fail("concept IDs must be unique");
+function localHref(outputRoot, target) {
+  const relative = path.relative(outputRoot, target);
+  if (!relative || path.isAbsolute(relative)) fail(`cannot create a relative source link from ${outputRoot} to ${target}`);
+  return relative.split(path.sep).map((part) => part === ".." ? part : encodeURIComponent(part)).join("/");
+}
 
-  const indegree = new Map(nodes.map(({ id }) => [id, 0]));
-  const dependents = new Map(nodes.map(({ id }) => [id, []]));
+function validateHashSnapshot(snapshot, referencedIds, currentHashes, label, sourceProblems = new Map()) {
+  requireObject(snapshot, label);
+  const expected = [...referencedIds].sort();
+  const actual = Object.keys(snapshot).sort();
+  if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) fail(`${label} must contain exactly the referenced canonical source IDs`);
+  const staleReasons = [];
+  for (const id of actual) {
+    requireId(id, `${label} source ID`);
+    requireHash(snapshot[id], `${label}.${id}`);
+    if (sourceProblems.has(id)) staleReasons.push(sourceProblems.get(id));
+    else if (!currentHashes.has(id)) staleReasons.push(`Source ${id} is no longer in the knowledge bank.`);
+    else if (currentHashes.get(id) !== snapshot[id]) staleReasons.push(`Source ${id} changed after this content was created.`);
+  }
+  return staleReasons;
+}
+
+function validateEvidence(items, label, evidence) {
+  requireArray(items, label);
+  if (!items.length) fail(`${label} must be non-empty`);
+  const seen = new Set();
+  for (const item of items) {
+    requireObject(item, `${label} reference`);
+    onlyKeys(item, ["sourceId", "locator"], `${label} reference`);
+    requireId(item.sourceId, `${label} source ID`);
+    requireText(item.locator, `${label} locator`);
+    const key = `${item.sourceId}\u0000${item.locator}`;
+    if (seen.has(key)) fail(`${label} contains duplicate evidence: ${item.sourceId} at ${item.locator}`);
+    seen.add(key);
+    evidence.add(item.sourceId);
+  }
+}
+
+function validateGraph(graph, knownSet, currentHashes, label = "concept graph", sourceProblems = new Map()) {
+  requireObject(graph, label);
+  onlyKeys(graph, ["nodes", "edges", "sourceHashes"], label);
+  requireArray(graph.nodes, `${label} nodes`);
+  requireArray(graph.edges, `${label} edges`);
+  requireArray(knownSet, `${label} known set`);
+  if (graph.nodes.length > 120) fail(`${label} cannot contain more than 120 concepts`);
+  const ids = new Set();
+  const evidence = new Set();
+  for (const node of graph.nodes) {
+    requireObject(node, `${label} concept`);
+    onlyKeys(node, ["id", "label", "description", "evidence"], `${label} concept`);
+    requireId(node.id, `${label} concept ID`);
+    if (ids.has(node.id)) fail(`${label} concept IDs must be unique: ${node.id}`);
+    ids.add(node.id);
+    requireText(node.label, `${label} concept label (${node.id})`);
+    requireText(node.description, `${label} concept description (${node.id})`);
+    validateEvidence(node.evidence, `${label} concept evidence (${node.id})`, evidence);
+  }
+  const indegree = new Map([...ids].map((id) => [id, 0]));
+  const dependents = new Map([...ids].map((id) => [id, []]));
   const edgeKeys = new Set();
-  for (const edge of edges) {
-    requireObject(edge, "prerequisite edge");
-    if (Object.keys(edge).some((key) => !["from", "to", "sourceIds"].includes(key))) fail(`prerequisite edge contains a non-semantic field: ${edge.from} -> ${edge.to}`);
-    const { from, to, sourceIds: edgeSourceIds } = edge;
-    if (!ids.has(from) || !ids.has(to)) fail(`edge references an unknown concept: ${from} -> ${to}`);
-    if (from === to) fail(`concept cannot be its own prerequisite: ${from}`);
-    if (!Array.isArray(edgeSourceIds) || !edgeSourceIds.length) fail(`prerequisite edge is not grounded in a source: ${from} -> ${to}`);
-    for (const sourceId of edgeSourceIds) {
-      validateId(sourceId, `source ID on edge ${from} -> ${to}`);
-      if (!allowMissingSources && !sourceIds.has(sourceId)) fail(`edge references an unknown source: ${from} -> ${to} -> ${sourceId}`);
-    }
-    const key = `${from}\u0000${to}`;
-    if (edgeKeys.has(key)) fail(`duplicate prerequisite edge: ${from} -> ${to}`);
+  for (const edge of graph.edges) {
+    requireObject(edge, `${label} edge`);
+    onlyKeys(edge, ["from", "to", "evidence"], `${label} edge`);
+    if (!ids.has(edge.from) || !ids.has(edge.to)) fail(`${label} edge references an unknown concept: ${edge.from} -> ${edge.to}`);
+    if (edge.from === edge.to) fail(`${label} concept cannot require itself: ${edge.from}`);
+    const key = `${edge.from}\u0000${edge.to}`;
+    if (edgeKeys.has(key)) fail(`${label} contains duplicate edge: ${edge.from} -> ${edge.to}`);
     edgeKeys.add(key);
-    indegree.set(to, indegree.get(to) + 1);
-    dependents.get(from).push(to);
+    validateEvidence(edge.evidence, `${label} edge evidence (${edge.from} -> ${edge.to})`, evidence);
+    indegree.set(edge.to, indegree.get(edge.to) + 1);
+    dependents.get(edge.from).push(edge.to);
   }
-
   const ready = [...indegree].filter(([, count]) => count === 0).map(([id]) => id);
   let visited = 0;
   while (ready.length) {
@@ -136,109 +285,223 @@ function validateGraph(nodes, edges, knownSet, sourceIds, allowMissingSources = 
       if (indegree.get(dependent) === 0) ready.push(dependent);
     }
   }
-  if (visited !== nodes.length) fail("concept graph contains a prerequisite cycle");
-
-  if (new Set(knownSet).size !== knownSet.length) fail("known set contains duplicate concept IDs");
-  for (const id of knownSet) {
-    if (!ids.has(id)) fail(`known set references an unknown concept: ${id}`);
-  }
-
-  const known = new Set(knownSet);
-  for (const { from, to } of edges) {
-    if (known.has(to) && !known.has(from)) {
-      fail(`known set is prerequisite-inconsistent: ${to} requires ${from}`);
-    }
-  }
+  if (visited !== ids.size) fail(`${label} contains a prerequisite cycle`);
+  if (new Set(knownSet).size !== knownSet.length) fail(`${label} known set contains duplicates`);
+  const known = new Set();
+  for (const id of knownSet) { if (!ids.has(id)) fail(`${label} known set references an unknown concept: ${id}`); known.add(id); }
+  for (const { from, to } of graph.edges) if (known.has(to) && !known.has(from)) fail(`${label} known set is not prerequisite-closed: ${to} requires ${from}`);
+  const staleReasons = validateHashSnapshot(graph.sourceHashes, evidence, currentHashes, `${label} sourceHashes`, sourceProblems);
+  return { graph: { nodes: graph.nodes, edges: graph.edges }, staleReasons, evidence };
 }
 
-function findFrontier(nodes, edges, knownSet) {
-  const known = new Set(knownSet);
-  const prerequisites = new Map(nodes.map(({ id }) => [id, []]));
-  for (const { from, to } of edges) prerequisites.get(to).push(from);
-  return nodes
-    .map(({ id }) => id)
-    .filter((id) => !known.has(id) && prerequisites.get(id).every((prerequisite) => known.has(prerequisite)));
+function validateCitation(citation, label) {
+  requireObject(citation, label);
+  requireId(citation.id, `${label} ID`);
+  optionalText(citation.note, `${label} note`);
+  if (citation.kind === "canonical") {
+    onlyKeys(citation, ["id", "kind", "sourceId", "locator", "note"], label);
+    requireId(citation.sourceId, `${label} source ID`);
+    requireText(citation.locator, `${label} locator`);
+  } else if (citation.kind === "external") {
+    onlyKeys(citation, ["id", "kind", "label", "href", "note"], label);
+    requireText(citation.label, `${label} label`);
+    requireText(citation.href, `${label} href`);
+    if (!isHttpsUrl(citation.href)) fail(`${label} href must be absolute HTTPS without credentials`);
+  } else fail(`${label} kind must be canonical or external`);
 }
 
-async function loadTopic(workspaceRoot, topicRef) {
-  const topicRoot = await safeExistingPath(workspaceRoot, topicRef.path);
-  const [topic, graph, knownState] = await Promise.all([
-    safeExistingPath(topicRoot, "topic.json").then(readJson),
-    safeExistingPath(topicRoot, "concept_graph.json").then(readJson),
-    safeExistingPath(topicRoot, "known_set.json").then(readJson),
+function validateSections(sections, citations, label, purposeRequired = true) {
+  requireArray(sections, `${label} sections`);
+  requireArray(citations, `${label} citations`);
+  const byCitation = new Map();
+  for (const citation of citations) {
+    validateCitation(citation, `${label} citation`);
+    if (byCitation.has(citation.id)) fail(`${label} citation IDs must be unique: ${citation.id}`);
+    byCitation.set(citation.id, citation);
+  }
+  const sectionIds = new Set();
+  const usedCitations = new Set();
+  const canonicalSources = new Set();
+  for (const section of sections) {
+    requireObject(section, `${label} section`);
+    onlyKeys(section, ["id", "title", "kind", "purpose", "markdown", "citationIds"], `${label} section`);
+    requireId(section.id, `${label} section ID`);
+    if (sectionIds.has(section.id)) fail(`${label} section IDs must be unique: ${section.id}`);
+    sectionIds.add(section.id);
+    requireText(section.title, `${label} section title (${section.id})`);
+    if (!new Set(["canonical", "external", "conflict"]).has(section.kind)) fail(`${label} section kind is invalid: ${section.kind}`);
+    if (purposeRequired && section.purpose === undefined) fail(`${label} section purpose is required: ${section.id}`);
+    if (section.purpose !== undefined && !new Set(["lesson", "review", "remediation", "answer"]).has(section.purpose)) fail(`${label} section purpose is invalid: ${section.purpose}`);
+    validateMarkdown(section.markdown, `${label} section markdown (${section.id})`);
+    requireArray(section.citationIds, `${label} section citationIds (${section.id})`);
+    if (!section.citationIds.length || new Set(section.citationIds).size !== section.citationIds.length) fail(`${label} section citationIds must be non-empty and unique: ${section.id}`);
+    const sectionCitations = section.citationIds.map((id) => {
+      requireId(id, `${label} citation ID`);
+      const citation = byCitation.get(id);
+      if (!citation) fail(`${label} section references unknown citation: ${id}`);
+      usedCitations.add(id);
+      if (citation.kind === "canonical") canonicalSources.add(citation.sourceId);
+      return citation;
+    });
+    if (section.kind === "canonical" && sectionCitations.some(({ kind }) => kind !== "canonical")) fail(`${label} canonical section cannot cite external evidence: ${section.id}`);
+    if (section.kind === "external" && !sectionCitations.some(({ kind }) => kind === "external")) fail(`${label} external section requires an external citation: ${section.id}`);
+    if (section.kind === "conflict" && sectionCitations.length < 2) fail(`${label} conflict section requires at least two citations: ${section.id}`);
+  }
+  if (citations.some(({ id }) => !usedCitations.has(id))) fail(`${label} contains an unused citation`);
+  return canonicalSources;
+}
+
+function validateArtifactMetadata(metadata) {
+  requireObject(metadata, "artifact metadata");
+  onlyKeys(metadata, ["id", "conceptId", "kind", "title", "summary", "updatedAt", "path"], "artifact metadata");
+  requireId(metadata.id, "artifact ID");
+  if (metadata.kind === "concept") requireId(metadata.conceptId, `artifact concept ID (${metadata.id})`);
+  else if (metadata.kind === "answer" && metadata.conceptId !== null) fail(`general answer artifact conceptId must be null: ${metadata.id}`);
+  else if (metadata.kind !== "answer") fail(`artifact kind must be concept or answer: ${metadata.id}`);
+  requireText(metadata.title, `artifact title (${metadata.id})`);
+  requireText(metadata.summary, `artifact summary (${metadata.id})`);
+  requireDate(metadata.updatedAt, `artifact updatedAt (${metadata.id})`);
+  requireRelativePath(metadata.path, `artifact path (${metadata.id})`);
+  if (metadata.path !== `artifacts/${metadata.id}.json`) fail(`artifact path must be artifacts/${metadata.id}.json`);
+}
+
+async function loadArtifact(topicRoot, metadata, graphIds, currentHashes, sourceProblems) {
+  validateArtifactMetadata(metadata);
+  if (metadata.conceptId !== null && !graphIds.has(metadata.conceptId)) fail(`artifact ${metadata.id} references concept missing from the graph: ${metadata.conceptId}`);
+  const file = await existingPath(topicRoot, metadata.path, `artifact path (${metadata.id})`);
+  const { value: artifact } = await readJsonDocument(file);
+  requireObject(artifact, `artifact ${metadata.id}`);
+  onlyKeys(artifact, ["id", "conceptId", "kind", "title", "summary", "updatedAt", "sourceHashes", "sections", "citations"], `artifact ${metadata.id}`);
+  for (const field of ["id", "conceptId", "kind", "title", "summary", "updatedAt"]) if (artifact[field] !== metadata[field]) fail(`artifact ${metadata.id} ${field} must match topic.json metadata`);
+  if (!Array.isArray(artifact.sections) || !artifact.sections.length) fail(`artifact ${metadata.id} requires at least one section`);
+  const canonicalSources = validateSections(artifact.sections, artifact.citations, `artifact ${metadata.id}`);
+  const staleReasons = validateHashSnapshot(artifact.sourceHashes, canonicalSources, currentHashes, `artifact ${metadata.id} sourceHashes`, sourceProblems);
+  return { id: artifact.id, conceptId: artifact.conceptId, kind: artifact.kind, title: artifact.title, summary: artifact.summary, updatedAt: artifact.updatedAt, stale: Boolean(staleReasons.length), staleReasons, sections: artifact.sections, citations: artifact.citations };
+}
+
+async function loadTopic(outputRoot, ref) {
+  const topicRoot = ref.root;
+  const [topicDoc, graphDoc, knownDoc] = await Promise.all([
+    existingPath(topicRoot, "topic.json", "topic metadata path").then(readJsonDocument),
+    existingPath(topicRoot, "concept_graph.json", "concept graph path").then(readJsonDocument),
+    existingPath(topicRoot, "known_set.json", "known set path").then(readJsonDocument),
   ]);
+  const topic = topicDoc.value;
+  const knownState = knownDoc.value;
   requireObject(topic, "topic metadata");
-  requireObject(knownState, "known set");
+  onlyKeys(topic, ["title", "eyebrow", "summary", "updatedAt", "graphReconciliationRequired", "sources", "artifacts"], "topic metadata");
   requireText(topic.title, "topic title");
-  for (const field of ["eyebrow", "summary", "updatedAt"]) optionalText(topic[field], `topic ${field}`);
+  requireText(topic.eyebrow, "topic eyebrow");
+  requireText(topic.summary, "topic summary");
+  requireDate(topic.updatedAt, "topic updatedAt");
   if (typeof topic.graphReconciliationRequired !== "boolean") fail("topic graphReconciliationRequired must be boolean");
-  if (!Array.isArray(topic.sources) || !Array.isArray(topic.artifacts)) fail("topic sources and artifacts must be arrays");
-  if (!Array.isArray(knownState.conceptIds)) fail("known set conceptIds must be an array");
-  const knownSet = knownState.conceptIds;
+  requireArray(topic.sources, "topic sources");
+  requireArray(topic.artifacts, "topic artifacts");
+  requireObject(knownState, "known set");
+  onlyKeys(knownState, ["conceptIds"], "known set");
+  requireArray(knownState.conceptIds, "known set conceptIds");
+
+  const sourceIds = new Set();
+  const currentHashes = new Map();
+  const sourceProblems = new Map();
+  const sources = [];
   for (const source of topic.sources) {
     requireObject(source, "source metadata");
-    validateId(source.id, "source ID");
+    onlyKeys(source, ["id", "title", "type", "author", "locator", "addedAt", "path"], "source metadata");
+    requireId(source.id, "source ID");
+    if (sourceIds.has(source.id)) fail(`source IDs must be unique: ${source.id}`);
+    sourceIds.add(source.id);
     requireText(source.title, `source title (${source.id})`);
     requireText(source.type, `source type (${source.id})`);
-    requireText(source.path, `source path (${source.id})`);
-    for (const field of ["author", "locator", "addedAt"]) optionalText(source[field], `source ${field} (${source.id})`);
+    optionalText(source.author, `source author (${source.id})`);
+    optionalText(source.locator, `source locator (${source.id})`);
+    requireDate(source.addedAt, `source addedAt (${source.id})`);
+    requireRelativePath(source.path, `source path (${source.id})`);
+    if (source.path !== `knowledge_bank/${source.id}.md`) fail(`source path must be knowledge_bank/${source.id}.md`);
+    let file;
+    try { file = await existingPath(topicRoot, source.path, `source path (${source.id})`); }
+    catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      sourceProblems.set(source.id, `Source ${source.id} is registered but its canonical Markdown file is missing.`);
+    }
+    const provenance = file ? inspectCanonicalMarkdown(await readUtf8(file), `Source ${source.id}`, source.path) : { problem: sourceProblems.get(source.id) };
+    if (provenance.hash) currentHashes.set(source.id, provenance.hash);
+    else sourceProblems.set(source.id, provenance.problem);
+    sources.push({ id: source.id, title: source.title, type: source.type, author: source.author, locator: source.locator, addedAt: source.addedAt, ...(file ? { href: localHref(outputRoot, file) } : {}), ...(provenance.problem ? { integrityProblem: provenance.problem } : {}) });
   }
-  const sourceIds = new Set(topic.sources.map(({ id }) => id));
-  if (sourceIds.size !== topic.sources.length) fail("source IDs must be unique");
-  validateGraph(graph.nodes, graph.edges, knownSet, sourceIds, Boolean(topic.graphReconciliationRequired));
-
-  const sources = await Promise.all(topic.sources.map(async (source) => ({
-    ...source,
-    markdown: await readFile(await safeExistingPath(topicRoot, source.path), "utf8"),
-  })));
+  const graphResult = validateGraph(graphDoc.value, knownState.conceptIds, currentHashes, "concept graph", sourceProblems);
+  const graphIds = new Set(graphResult.graph.nodes.map(({ id }) => id));
   const artifactIds = new Set();
-  const artifactConceptIds = new Set();
-  // Output-only artifacts may intentionally outlive a source or concept removal.
-  for (const artifact of topic.artifacts) {
-    validateArtifact(artifact);
-    if (artifactIds.has(artifact.id)) fail(`duplicate artifact ID: ${artifact.id}`);
-    if (artifactConceptIds.has(artifact.conceptId)) fail(`concept has more than one learning artifact: ${artifact.conceptId}`);
-    artifactIds.add(artifact.id);
-    artifactConceptIds.add(artifact.conceptId);
+  const conceptArtifacts = new Set();
+  const artifacts = [];
+  for (const metadata of topic.artifacts) {
+    validateArtifactMetadata(metadata);
+    if (artifactIds.has(metadata.id)) fail(`artifact IDs must be unique: ${metadata.id}`);
+    artifactIds.add(metadata.id);
+    if (metadata.conceptId !== null) {
+      if (conceptArtifacts.has(metadata.conceptId)) fail(`concept has more than one artifact: ${metadata.conceptId}`);
+      conceptArtifacts.add(metadata.conceptId);
+    }
+    artifacts.push(await loadArtifact(topicRoot, metadata, graphIds, currentHashes, sourceProblems));
   }
-  const artifacts = await Promise.all(topic.artifacts.map(async (artifact) => ({
-    ...artifact,
-    html: await readFile(await safeExistingPath(topicRoot, artifact.path), "utf8"),
-  })));
-
+  const stateHashes = { topic: topicDoc.hash, conceptGraph: graphDoc.hash, knownSet: knownDoc.hash };
+  const reconciliationReasons = [...new Set([...sourceProblems.values(), ...graphResult.staleReasons])];
+  const graphStale = Boolean(reconciliationReasons.length);
   return {
-    topic: {
-      title: topic.title,
-      eyebrow: topic.eyebrow,
-      summary: topic.summary,
-      updatedAt: topic.updatedAt,
-      graphReconciliationRequired: Boolean(topic.graphReconciliationRequired),
-    },
-    graph: {
-      nodes: graph.nodes,
-      edges: graph.edges,
-      frontierIds: findFrontier(graph.nodes, graph.edges, knownSet),
-    },
-    knownSet,
-    sources,
-    artifacts,
+    view: { projectId: ref.projectId, id: ref.id, name: ref.name, title: topic.title, eyebrow: topic.eyebrow, summary: topic.summary, updatedAt: topic.updatedAt, reconciliationRequired: topic.graphReconciliationRequired || graphStale, reconciliationReasons, graph: graphResult.graph, knownSet: knownState.conceptIds, sources, artifacts },
+    currentHashes,
+    sourceProblems,
+    stateHashes,
+    graphStale,
+    explicitReconciliation: topic.graphReconciliationRequired,
   };
 }
 
-function pageName(projectId, topicId) {
-  return `${projectId.length}-${projectId}--${topicId.length}-${topicId}.html`;
+function validateStateSnapshot(snapshot, current) {
+  requireObject(snapshot, "session baseStateHashes");
+  const keys = ["conceptGraph", "knownSet", "topic"];
+  if (Object.keys(snapshot).sort().join("\u0000") !== [...keys].sort().join("\u0000")) fail("session baseStateHashes must contain exactly topic, conceptGraph, and knownSet");
+  const reasons = [];
+  for (const key of keys) {
+    requireHash(snapshot[key], `session baseStateHashes.${key}`);
+    if (snapshot[key] !== current[key]) reasons.push(`${key} state changed after this preview was created.`);
+  }
+  return reasons;
 }
 
-function projectPageName(projectId) {
-  return `${projectId.length}-${projectId}.html`;
-}
-
-function artifactPageName(projectId, topicId, artifactId) {
-  return `${pageName(projectId, topicId).slice(0, -5)}--${artifactId.length}-${artifactId}.html`;
-}
-
-function validateId(id, label) {
-  if (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]*$/.test(id)) fail(`${label} must use lowercase letters, digits, hyphens, or underscores: ${id}`);
+function validateSession(session, loaded, current) {
+  requireObject(session, "ephemeral session payload");
+  onlyKeys(session, ["active", "kind", "target", "title", "context", "baseHashes", "baseStateHashes", "sections", "citations", "proposedGraph", "proposedKnownSet"], "ephemeral session payload");
+  if (session.active !== true) fail("ephemeral session payload must set active to true");
+  if (!new Set(["graph-proposal", "answer"]).has(session.kind)) fail(`unknown ephemeral session kind: ${session.kind}`);
+  requireObject(session.target, "session target");
+  onlyKeys(session.target, ["projectId", "topicId"], "session target");
+  requireId(session.target.projectId, "session target project ID");
+  requireId(session.target.topicId, "session target topic ID");
+  if (session.target.projectId !== current.projectId || session.target.topicId !== current.topicId) fail("session target must exactly match workspace current");
+  optionalText(session.title, "session title");
+  optionalText(session.context, "session context");
+  const sections = session.sections === undefined ? [] : session.sections;
+  const citations = session.citations === undefined ? [] : session.citations;
+  const referencedSources = validateSections(sections, citations, "session", session.kind !== "graph-proposal");
+  const staleReasons = validateStateSnapshot(session.baseStateHashes, loaded.stateHashes);
+  let proposedGraph;
+  let proposedKnownSet;
+  if (session.kind === "answer") {
+    if (!sections.length) fail("answer session requires sections");
+    if (session.proposedGraph !== undefined || session.proposedKnownSet !== undefined) fail("answer session cannot contain proposed graph state");
+  } else {
+    if (!loaded.explicitReconciliation && !loaded.graphStale) fail("graph proposal requires graph reconciliation to be pending");
+    if (session.proposedGraph === undefined || !Array.isArray(session.proposedKnownSet)) fail("graph proposal requires proposedGraph and proposedKnownSet");
+    const result = validateGraph(session.proposedGraph, session.proposedKnownSet, loaded.currentHashes, "proposed graph", loaded.sourceProblems);
+    proposedGraph = result.graph;
+    proposedKnownSet = session.proposedKnownSet;
+    for (const id of result.evidence) referencedSources.add(id);
+    staleReasons.push(...result.staleReasons);
+    staleReasons.push(...loaded.sourceProblems.values());
+  }
+  staleReasons.push(...validateHashSnapshot(session.baseHashes, referencedSources, loaded.currentHashes, "session baseHashes", loaded.sourceProblems));
+  return { active: true, kind: session.kind, title: session.title, context: session.context, sections, citations, proposedGraph, proposedKnownSet, stale: Boolean(staleReasons.length), staleReasons: [...new Set(staleReasons)] };
 }
 
 function inject(template, data) {
@@ -248,203 +511,230 @@ function inject(template, data) {
   return template.replace(token, json);
 }
 
-function validateSession(session, loaded) {
-  requireObject(session, "ephemeral session payload");
-  if (session.active !== true) fail("ephemeral session payload must set active to true");
-  const kinds = new Set(["graph-proposal", "answer"]);
-  if (!kinds.has(session.kind)) fail(`unknown ephemeral session kind: ${session.kind}`);
-  if (session.html !== undefined && typeof session.html !== "string") fail("session html must be a string");
-  if (session.proposedGraph !== undefined && session.kind !== "graph-proposal") fail("proposedGraph is valid only for graph-proposal");
-  if (session.proposedKnownSet !== undefined && session.kind !== "graph-proposal") {
-    fail(`proposedKnownSet is not valid for ${session.kind}`);
-  }
-  if (session.kind === "graph-proposal" && !Array.isArray(session.proposedKnownSet)) fail("graph-proposal requires proposedKnownSet");
-  if (session.kind === "graph-proposal" && !session.proposedGraph) fail("graph-proposal requires proposedGraph");
-  if (session.kind === "graph-proposal" && !loaded.topic.graphReconciliationRequired) fail("graph-proposal requires graph reconciliation to be pending");
-  if (session.kind === "answer" && !(typeof session.html === "string" && session.html.trim())) fail("answer requires html");
-  const sourceIds = new Set(loaded.sources.map(({ id }) => id));
-  const proposedGraph = session.proposedGraph;
-  const proposedKnownSet = session.proposedKnownSet ?? loaded.knownSet;
-  if (proposedGraph) {
-    if (!Array.isArray(proposedGraph.nodes) || !Array.isArray(proposedGraph.edges)) fail("proposed graph must contain node and edge arrays");
-    validateGraph(proposedGraph.nodes, proposedGraph.edges, proposedKnownSet, sourceIds);
-  }
-  if (session.sourceRefs !== undefined && !Array.isArray(session.sourceRefs)) fail("session sourceRefs must be an array");
-  for (const ref of session.sourceRefs ?? []) {
-    requireObject(ref, "session source reference");
-    if (!sourceIds.has(ref.sourceId)) fail(`session output references an unknown source: ${ref.sourceId}`);
-    requireText(ref.locator, `session source locator (${ref.sourceId})`);
-  }
-}
-
-async function replaceDirectory(outputRoot, pages) {
-  const parent = path.dirname(outputRoot);
-  await mkdir(parent, { recursive: true });
-  const temporary = await mkdtemp(path.join(parent, `.${path.basename(outputRoot)}-new-`));
+async function replaceDirectory(outputRoot, html) {
+  const temporary = await mkdtemp(path.join(path.dirname(outputRoot), `.${path.basename(outputRoot)}-new-`));
   const previous = `${outputRoot}.previous-${process.pid}-${Date.now()}`;
   let movedPrevious = false;
   try {
-    await Promise.all([...pages].map(([name, html]) => writeFile(path.join(temporary, name), html)));
+    await writeFile(path.join(temporary, "index.html"), html);
     try { await rename(outputRoot, previous); movedPrevious = true; }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     await rename(temporary, outputRoot);
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
     if (movedPrevious) {
-      try { await rename(previous, outputRoot); } catch {}
+      try { await rename(previous, outputRoot); }
+      catch (restoreError) { error.message += `; previous output remains at ${previous}: ${restoreError.message}`; }
     }
     throw error;
   }
   if (movedPrevious) await rm(previous, { recursive: true, force: true });
 }
 
-async function render(workspaceRootArg, outputRootArg, sessionPathArg) {
+async function render(workspaceRootArg, outputRootArg, sessionPathArg, quiet = false) {
   const workspaceRoot = await realpath(path.resolve(workspaceRootArg));
   const outputRoot = await canonicalOutputPath(outputRootArg ?? path.join(workspaceRoot, "html"));
   const sessionPath = sessionPathArg ? await realpath(path.resolve(sessionPathArg)) : undefined;
-  const insideWorkspace = (candidate) => candidate === workspaceRoot || candidate.startsWith(`${workspaceRoot}${path.sep}`);
   if (sessionPath) {
-    if (insideWorkspace(outputRoot) || insideWorkspace(sessionPath)) fail("ephemeral session input and output must both be outside the durable workspace");
-    if (path.basename(sessionPath) !== "session.json" || outputRoot !== path.join(path.dirname(sessionPath), "rendered")) {
-      fail("ephemeral session must use one temporary directory containing session.json and rendered/");
-    }
-  } else if (outputRoot !== path.join(workspaceRoot, "html")) {
-    fail("durable output must be <workspace-root>/html");
-  }
-  const [workspace, template] = await Promise.all([
-    safeExistingPath(workspaceRoot, "workspace.json").then(readJson),
-    readFile(templatePath, "utf8"),
-  ]);
-  const session = sessionPath ? await readJson(sessionPath) : undefined;
-  if (!Array.isArray(workspace.projects)) fail("workspace projects must be an array");
+    if (pathsOverlap(workspaceRoot, outputRoot) || isWithin(workspaceRoot, sessionPath)) fail("ephemeral session input and output must both be outside and must not contain the durable workspace");
+    if (path.basename(sessionPath) !== "session.json" || outputRoot !== path.join(path.dirname(sessionPath), "rendered")) fail("ephemeral session must use one temporary directory containing session.json and rendered/");
+  } else if (outputRoot !== path.join(workspaceRoot, "html")) fail("durable output must be <workspace-root>/html");
+  const workspaceFile = await existingPath(workspaceRoot, "workspace.json", "workspace metadata path");
+  const [{ value: workspace }, template] = await Promise.all([readJsonDocument(workspaceFile), readUtf8(templatePath)]);
+  requireObject(workspace, "workspace metadata");
+  onlyKeys(workspace, ["name", "current", "projects"], "workspace metadata");
+  requireText(workspace.name, "workspace name");
+  requireArray(workspace.projects, "workspace projects");
   const projectIds = new Set();
+  const refs = [];
+  const projects = [];
   for (const project of workspace.projects) {
-    validateId(project.id, "project ID");
-    if (projectIds.has(project.id)) fail(`duplicate project ID: ${project.id}`);
+    requireObject(project, "project metadata");
+    onlyKeys(project, ["id", "name", "topics"], "project metadata");
+    requireId(project.id, "project ID");
+    if (projectIds.has(project.id)) fail(`project IDs must be unique: ${project.id}`);
     projectIds.add(project.id);
-    if (!Array.isArray(project.topics)) fail(`project topics must be an array: ${project.id}`);
+    requireText(project.name, `project name (${project.id})`);
+    requireArray(project.topics, `project topics (${project.id})`);
     const topicIds = new Set();
+    const topics = [];
     for (const topic of project.topics) {
-      validateId(topic.id, "topic ID");
-      if (topicIds.has(topic.id)) fail(`duplicate topic ID in ${project.id}: ${topic.id}`);
+      requireObject(topic, `topic reference (${project.id})`);
+      onlyKeys(topic, ["id", "name", "path"], `topic reference (${project.id})`);
+      requireId(topic.id, "topic ID");
+      if (topicIds.has(topic.id)) fail(`topic IDs must be unique in ${project.id}: ${topic.id}`);
       topicIds.add(topic.id);
+      requireText(topic.name, `topic name (${project.id}/${topic.id})`);
+      const root = await existingPath(workspaceRoot, topic.path, `topic path (${project.id}/${topic.id})`);
+      if (pathsOverlap(root, outputRoot)) fail(`topic path overlaps disposable renderer output: ${topic.path}`);
+      refs.push({ projectId: project.id, id: topic.id, name: topic.name, root });
+      topics.push({ id: topic.id, name: topic.name });
+    }
+    projects.push({ id: project.id, name: project.name, topics });
+  }
+  for (let left = 0; left < refs.length; left += 1) {
+    for (let right = left + 1; right < refs.length; right += 1) {
+      if (pathsOverlap(refs[left].root, refs[right].root)) fail(`topic paths must not overlap: ${refs[left].id} and ${refs[right].id}`);
     }
   }
-  const refs = workspace.projects.flatMap((project) =>
-    project.topics.map((topic) => ({ ...topic, projectId: project.id })),
-  );
-  if (!refs.length) fail("workspace has no topics");
-  const refKeys = new Set(refs.map(({ projectId, id }) => `${projectId}/${id}`));
-  const current = workspace.current ?? { projectId: refs[0].projectId, topicId: refs[0].id };
-  if (!refKeys.has(`${current.projectId}/${current.topicId}`)) fail("workspace current topic does not exist");
-
-  const navProjects = workspace.projects.map((project) => ({
-    id: project.id,
-    name: project.name,
-    href: `./${projectPageName(project.id)}`,
-    topics: project.topics.map(({ id, name }) => ({
-      id,
-      name,
-      href: `./${pageName(project.id, id)}`,
-    })),
-  }));
-
-  const pages = new Map();
-  const pageData = {
-    workspace: { name: workspace.name, projects: navProjects },
-  };
-  pages.set("workspace.html", inject(template, {
-    ...pageData,
-    current: {},
-    page: { kind: "workspace", title: workspace.name },
-  }));
-  for (const project of navProjects) {
-    pages.set(projectPageName(project.id), inject(template, {
-      ...pageData,
-      current: { projectId: project.id },
-      page: { kind: "project", title: project.name, parentHref: "./workspace.html", parentLabel: workspace.name },
-    }));
+  let current = null;
+  if (!Object.hasOwn(workspace, "current")) fail("workspace metadata must contain current");
+  if (workspace.current !== null) {
+    requireObject(workspace.current, "workspace current");
+    onlyKeys(workspace.current, ["projectId", "topicId"], "workspace current");
+    requireId(workspace.current.projectId, "workspace current project ID");
+    requireId(workspace.current.topicId, "workspace current topic ID");
+    current = { projectId: workspace.current.projectId, topicId: workspace.current.topicId };
+    if (!refs.some((ref) => ref.projectId === current.projectId && ref.id === current.topicId)) fail("workspace current topic does not exist");
   }
+  const loadedTopics = [];
+  const internals = new Map();
   for (const ref of refs) {
-    const loaded = await loadTopic(workspaceRoot, ref);
-    const isCurrent = current.projectId === ref.projectId && current.topicId === ref.id;
-    if (session && isCurrent) validateSession(session, loaded);
-    const artifacts = loaded.artifacts.map((artifact) => ({
-      ...artifact,
-      href: `./${artifactPageName(ref.projectId, ref.id, artifact.id)}`,
-    }));
-    const data = {
-      ...pageData,
-      current: { projectId: ref.projectId, topicId: ref.id },
-      ...loaded,
-      artifacts,
-      ...(session && isCurrent
-        ? { session }
-        : {}),
-    };
-    const topicFile = pageName(ref.projectId, ref.id);
-    pages.set(topicFile, inject(template, {
-      ...data,
-      page: {
-        kind: "topic",
-        title: loaded.topic.title,
-        parentHref: `./${projectPageName(ref.projectId)}`,
-        parentLabel: navProjects.find(({ id }) => id === ref.projectId)?.name,
-      },
-    }));
-    for (const artifact of artifacts) {
-      pages.set(artifactPageName(ref.projectId, ref.id, artifact.id), inject(template, {
-        ...data,
-        page: { kind: "artifact", title: artifact.title, artifactId: artifact.id, parentHref: `./${topicFile}`, parentLabel: loaded.topic.title },
-      }));
-    }
+    const loaded = await loadTopic(outputRoot, ref);
+    loadedTopics.push(loaded.view);
+    internals.set(`${ref.projectId}\u0000${ref.id}`, loaded);
   }
-
-  pages.set("index.html", pages.get(pageName(current.projectId, current.topicId)));
-  await replaceDirectory(outputRoot, pages);
-  console.log(`Rendered ${pages.size} pages to ${outputRoot}`);
-  if (session) console.log("Ephemeral session UI rendered outside the workspace; remove the directory when the session output ends.");
+  let session;
+  if (sessionPath) {
+    if (!current) fail("ephemeral session requires a current topic");
+    session = validateSession((await readJsonDocument(sessionPath)).value, internals.get(`${current.projectId}\u0000${current.topicId}`), current);
+  }
+  const html = inject(template, { workspace: { name: workspace.name, current, projects }, topics: loadedTopics, ...(session ? { session } : {}) });
+  await replaceDirectory(outputRoot, html);
+  if (!quiet) {
+    console.log(`Rendered one self-contained page to ${path.join(outputRoot, "index.html")}`);
+    if (session) console.log("Ephemeral session UI rendered outside the workspace; remove its temporary directory when the preview ends.");
+  }
+  return { outputRoot, html };
 }
 
 async function check() {
-  const template = await readFile(templatePath, "utf8");
+  const template = await readUtf8(templatePath);
   assert.equal(template.split("__LEARN_DATA__").length, 2);
-  for (const marker of ['id="up-link"', 'id="pane-overview"', 'id="graph-canvas"', 'id="note-empty"', 'id="learn-data"', "window.location.href = safeHref(artifact.href)", "setUp(currentTopicHref, topic.title)", "mass: nodeRadius * nodeRadius", "while (ticks < 4000 && movement > .01)", "context.measureText(point.label).width", "if (resizeCanvas()) resetView()", "requestAnimationFrame(runSimulation)", "context.lineTo(baseX - uy * halfWidth"]) assert.ok(template.includes(marker));
-  assert.doesNotMatch(template, /resetView\(\); heatGraph\(\)/);
-  const nodes = ["a", "b", "c"].map((id) => ({ id, label: id.toUpperCase(), description: `${id} description`, sourceIds: ["s"] }));
-  const edges = [{ from: "a", to: "b", sourceIds: ["s"] }, { from: "b", to: "c", sourceIds: ["s"] }];
-  validateGraph(nodes, edges, ["a"], new Set(["s"]));
-  assert.deepEqual(findFrontier(nodes, edges, ["a"]), ["b"]);
-  assert.throws(() => validateGraph(nodes, edges, ["b"], new Set(["s"])), /prerequisite-inconsistent/);
-  assert.throws(() => validateGraph(nodes, [...edges, { from: "c", to: "a", sourceIds: ["s"] }], [], new Set(["s"])), /cycle/);
-  assert.throws(() => validateGraph([{ id: "a", label: "A", description: "A description", sourceIds: ["removed"] }], [], [], new Set()), /unknown source/);
-  validateGraph([{ id: "a", label: "A", description: "A description", sourceIds: ["removed"] }], [], [], new Set(), true);
-  assert.throws(() => validateGraph([{ id: "a", description: "A description", sourceIds: ["s"] }], [], [], new Set(["s"])), /concept label/);
-  assert.throws(() => validateGraph([{ ...nodes[0], x: 10 }], [], [], new Set(["s"])), /non-semantic field/);
-  assert.throws(() => validateGraph(nodes, [{ ...edges[0], color: "red" }], [], new Set(["s"])), /non-semantic field/);
-  assert.throws(() => validateId("../escape", "test ID"), /must use/);
-  assert.equal(projectPageName("project"), "7-project.html");
-  assert.equal(artifactPageName("project", "topic", "note"), "7-project--5-topic--4-note.html");
-  assert.notEqual(pageName("a--b", "c"), pageName("a", "b--c"));
-  assert.notEqual(artifactPageName("a--b", "c", "d"), artifactPageName("a", "b--c", "d"));
-  validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "html/artifacts/lesson.html", labels: ["canonical"], citations: [{ sourceId: "s", locator: "§1" }] });
-  assert.throws(() => validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "lesson.html", labels: ["canonical"], citations: [{ sourceId: "s", locator: "§1", href: "https://example.com" }] }), /cannot contain href/);
-  assert.throws(() => validateArtifact({ id: "lesson", conceptId: "a", title: "Lesson", path: "lesson.html", labels: ["external"], citations: [{ label: "Local", href: "../secret" }] }), /absolute HTTPS/);
-  const loaded = { topic: { graphReconciliationRequired: false }, sources: [{ id: "s" }], knownSet: ["a"], graph: { nodes, edges } };
-  validateSession({ active: true, kind: "answer", html: "<p>Answer</p>", sourceRefs: [{ sourceId: "s", locator: "§1" }] }, loaded);
-  assert.throws(() => validateSession({ active: true, kind: "quiz", type: "boundary", current: 1, question: "Why?" }, loaded), /unknown ephemeral session kind/);
-  assert.throws(() => validateSession({ active: true, kind: "graph-proposal", proposedKnownSet: [] }, loaded), /requires proposedGraph/);
-  assert.throws(() => validateSession({ active: true, kind: "answer", html: "<p>Answer</p>", proposedKnownSet: [] }, loaded), /not valid/);
-  assert.equal(inject("x__LEARN_DATA__y", { value: "</script>" }), "x{\"value\":\"\\u003c/script>\"}y");
+  assert.doesNotMatch(template, /\bfetch\s*\(|type=["']module["']|localhost|127\.0\.0\.1/);
+  assert.doesNotMatch(template, /\.innerHTML\s*=/);
+  for (const marker of ['id="learn-data"', "function renderGraph", "renderMarkdown", "layoutGraph", "aria-expanded"]) assert.ok(template.includes(marker));
+  const inlinePatternSource = template.match(/const inlinePattern = (\/[^\n]+\/gu);/)?.[1];
+  assert.ok(inlinePatternSource);
+  assert.doesNotMatch("foo_bar_baz", new Function(`return ${inlinePatternSource}`)());
+  assert.match("Use _emphasis_.", new Function(`return ${inlinePatternSource}`)());
+  assert(pathsOverlap("/workspace/html", "/workspace/html/topic"));
+  assert(!pathsOverlap("/workspace/html", "/workspace/projects/topic"));
+  assert.equal(inject("x__LEARN_DATA__y", { value: "</script>\u2028" }), 'x{"value":"\\u003c/script>\\u2028"}y');
+  assert.throws(() => validateMarkdown("Unsafe <script>alert(1)</script>.", "test markdown"), /raw HTML/);
+  assert.throws(() => validateMarkdown("[unsafe](javascript:alert(1))", "test markdown"), /absolute HTTPS/);
+  assert.throws(() => validateMarkdown("![remote](https://example.com/image.png)", "test markdown"), /images/);
+  assert.throws(() => validateMarkdown("# Nested page title", "test markdown"), /H3 or H4/);
+  assert.throws(() => validateMarkdown("| One | Two |\n| --- | --- |", "test markdown"), /tables/);
+  assert.throws(() => validateMarkdown("```js\nunfinished", "test markdown"), /unclosed/);
+  assert.throws(() => validateMarkdown("~~~js\ncode\n~~~", "test markdown"), /unsupported code fence/);
+  assert.throws(() => validateMarkdown("Title\n---", "test markdown"), /setext headings/);
+  assert.throws(() => validateMarkdown("Title\n  ---", "test markdown"), /setext headings/);
+  assert.throws(() => validateMarkdown("- outer\n  - inner", "test markdown"), /nested list items/);
+  assert.throws(() => validateMarkdown('[label](https://example.com "title")', "test markdown"), /without titles/);
+  validateMarkdown("```html\n<script>example()</script>\n```", "test markdown");
+  validateMarkdown("```text\n~~~ literal\n  ``` literal\n```", "test markdown");
+  assert.match(inspectCanonicalMarkdown("# Missing provenance", "Source test").problem, /provenance/);
+  const tinyBody = "# Body\n", tinyHash = sha256(tinyBody), tinyPath = "knowledge_bank/test.md";
+  const tinyHeader = `---\noriginal_source: "input.md"\nsource_path: "/tmp/input.md"\ncanonical_markdown_path: "${tinyPath}"\nconverted_at: "2026-09-05T12:00:00Z"\nsource_sha256: "${"b".repeat(64)}"\nconverter: "steipete/summarize"\nconverter_version: "0.21.11"\nmarkdown_body_sha256: "${tinyHash}"\n---\n`;
+  assert.equal(inspectCanonicalMarkdown(tinyHeader + tinyBody, "Source test", tinyPath).hash, tinyHash);
+  assert.equal(inspectCanonicalMarkdown(`${tinyHeader}\n${tinyBody}`, "Source test", tinyPath).hash, tinyHash);
+  assert.match(inspectCanonicalMarkdown(tinyHeader.replace("steipete/summarize", "other"), "Source test", tinyPath).problem, /steipete\/summarize/);
+  assert.match(inspectCanonicalMarkdown(tinyHeader.replace("0.21.11", "0.21.10"), "Source test", tinyPath).problem, /0\.21\.11/);
+  assert.match(inspectCanonicalMarkdown(tinyHeader.replace('original_source: "input.md"\n', ""), "Source test", tinyPath).problem, /original_source/);
+  const executableScripts = [...template.matchAll(/<script(?![^>]*type=["']application\/json["'])[^>]*>([\s\S]*?)<\/script>/g)];
+  assert.equal(executableScripts.length, 1);
+  new Function(executableScripts[0][1]);
+  const root = await mkdtemp(path.join(tmpdir(), "learn-render-check-"));
+  try {
+    const workspaceRoot = path.join(root, "workspace");
+    const topicRoot = path.join(workspaceRoot, "projects", "p", "topics", "t");
+    const sourceBody = "# Canonical source\n\nUnique source body that must not be embedded.\n";
+    const sourceHash = sha256(sourceBody);
+    const source = `---\noriginal_source: "input.md"\nsource_path: "${path.join(root, "input.md")}"\ncanonical_markdown_path: "knowledge_bank/source.md"\nconverted_at: "2026-09-05T12:00:00Z"\nsource_sha256: "${"b".repeat(64)}"\nconverter: "steipete/summarize"\nconverter_version: "0.21.11"\nmarkdown_body_sha256: "${sourceHash}"\n---\n\n${sourceBody}`;
+    const graph = { nodes: [{ id: "basics", label: "Basics", description: "The foundation.", evidence: [{ sourceId: "source", locator: "Heading 1" }] }], edges: [], sourceHashes: { source: sourceHash } };
+    const known = { conceptIds: [] };
+    const topic = { title: "Topic", eyebrow: "Test", summary: "Integration fixture.", updatedAt: "2026-09-05", graphReconciliationRequired: false, sources: [{ id: "source", title: "Source", type: "markdown", addedAt: "2026-09-05", path: "knowledge_bank/source.md" }], artifacts: [{ id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", path: "artifacts/basics.json" }] };
+    const artifact = { id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", sourceHashes: { source: sourceHash }, sections: [{ id: "lesson", title: "Lesson", kind: "canonical", purpose: "lesson", markdown: "Safe text with a [reference](https://example.com).", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "canonical", sourceId: "source", locator: "Heading 1" }] };
+    await mkdir(path.join(topicRoot, "knowledge_bank"), { recursive: true });
+    await mkdir(path.join(topicRoot, "artifacts"), { recursive: true });
+    const topicText = JSON.stringify(topic), graphText = JSON.stringify(graph), knownText = JSON.stringify(known);
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
+    await writeFile(path.join(topicRoot, "topic.json"), topicText);
+    await writeFile(path.join(topicRoot, "concept_graph.json"), graphText);
+    await writeFile(path.join(topicRoot, "known_set.json"), knownText);
+    const sourceFile = path.join(topicRoot, "knowledge_bank", "source.md");
+    await writeFile(sourceFile, source);
+    await writeFile(path.join(topicRoot, "artifacts", "basics.json"), JSON.stringify(artifact));
+    const { outputRoot, html } = await render(workspaceRoot, undefined, undefined, true);
+    assert.deepEqual(await readdir(outputRoot), ["index.html"]);
+    assert(!html.includes(sourceBody.trim()));
+    assert(!html.includes("<script>alert(1)</script>"));
+    const match = html.match(/<script type="application\/json" id="learn-data">([\s\S]*?)<\/script>/);
+    assert(match);
+    const payload = JSON.parse(match[1]);
+    assert.equal(payload.topics.length, 1);
+    assert.equal(payload.topics[0].artifacts[0].stale, false);
+    assert.match(payload.topics[0].sources[0].href, /^\.\.\//);
+    assert.equal(fileURLToPath(new URL(payload.topics[0].sources[0].href, pathToFileURL(path.join(outputRoot, "index.html")))), await realpath(path.join(topicRoot, "knowledge_bank", "source.md")));
+    await rm(sourceFile);
+    const missing = await render(workspaceRoot, undefined, undefined, true);
+    const missingPayload = JSON.parse(missing.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]);
+    assert.match(missingPayload.topics[0].sources[0].integrityProblem, /missing/);
+    assert.equal(missingPayload.topics[0].reconciliationRequired, true);
+    assert.equal(missingPayload.topics[0].artifacts[0].stale, true);
+    await writeFile(sourceFile, source);
+    await render(workspaceRoot, undefined, undefined, true);
+    const renderedBeforeRejectedInputs = await readFile(path.join(outputRoot, "index.html"));
+    const nestedRoot = path.join(topicRoot, "nested");
+    await mkdir(nestedRoot);
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }, { id: "nested", name: "Nested", path: "projects/p/topics/t/nested" }] }] }));
+    await assert.rejects(render(workspaceRoot, undefined, undefined, true), /topic paths must not overlap/);
+    assert.deepEqual(await readFile(path.join(outputRoot, "index.html")), renderedBeforeRejectedInputs);
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "html" }] }] }));
+    await assert.rejects(render(workspaceRoot, undefined, undefined, true), /topic path overlaps disposable renderer output/);
+    assert.deepEqual(await readFile(path.join(outputRoot, "index.html")), renderedBeforeRejectedInputs);
+    await mkdir(path.join(root, "outside"));
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "../outside" }] }] }));
+    await assert.rejects(render(workspaceRoot, undefined, undefined, true), /must be a normalized relative path/);
+    assert.deepEqual(await readFile(path.join(outputRoot, "index.html")), renderedBeforeRejectedInputs);
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
+    const previewRoot = path.join(root, "preview");
+    const sessionPath = path.join(previewRoot, "session.json");
+    await mkdir(previewRoot);
+    const session = { active: true, kind: "answer", target: { projectId: "p", topicId: "t" }, title: "Safe preview", baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(topicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "answer", title: "Answer", kind: "canonical", purpose: "answer", markdown: "A current answer.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "canonical", sourceId: "source", locator: "Heading 1" }] };
+    await writeFile(sessionPath, JSON.stringify({ ...session, target: { projectId: "p", topicId: "wrong" } }));
+    await assert.rejects(render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true), /session target must exactly match workspace current/);
+    await writeFile(sessionPath, JSON.stringify(session));
+    const preview = await render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true);
+    assert.equal(JSON.parse(preview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).session.stale, false);
+    session.baseStateHashes.knownSet = "0".repeat(64);
+    await writeFile(sessionPath, JSON.stringify(session));
+    const stalePreview = await render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true);
+    assert.equal(JSON.parse(stalePreview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).session.stale, true);
+    const reconcilingTopicText = JSON.stringify({ ...topic, graphReconciliationRequired: true });
+    await writeFile(path.join(topicRoot, "topic.json"), reconcilingTopicText);
+    const graphSession = { active: true, kind: "graph-proposal", target: { projectId: "p", topicId: "t" }, baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(reconcilingTopicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "proposal", title: "Proposal", kind: "canonical", markdown: "A grounded graph proposal.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "canonical", sourceId: "source", locator: "Heading 1" }], proposedGraph: graph, proposedKnownSet: [] };
+    await writeFile(sessionPath, JSON.stringify(graphSession));
+    const graphPreview = await render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true);
+    const graphPayload = JSON.parse(graphPreview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]);
+    assert.equal(graphPayload.session.stale, false);
+    assert.equal(graphPayload.session.proposedGraph.nodes[0].evidence[0].locator, "Heading 1");
+    const emptyRoot = path.join(root, "empty");
+    await mkdir(emptyRoot);
+    await writeFile(path.join(emptyRoot, "workspace.json"), JSON.stringify({ name: "Empty", current: null, projects: [] }));
+    const empty = await render(emptyRoot, undefined, undefined, true);
+    assert.deepEqual(JSON.parse(empty.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).topics, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
   console.log("LEARN renderer checks passed");
 }
 
 const args = process.argv.slice(2);
-if (args[0] === "--check") {
-  await check();
-} else if (args.length >= 1 && args.length <= 3) {
-  await render(args[0], args[1], args[2]);
-} else {
+if (args[0] === "--check") await check();
+else if (args.length >= 1 && args.length <= 3) await render(args[0], args[1], args[2]);
+else {
   console.error("Usage: render-workspace.mjs <workspace-dir> [output-dir] [ephemeral-session.json]\n       render-workspace.mjs --check");
   process.exitCode = 1;
 }

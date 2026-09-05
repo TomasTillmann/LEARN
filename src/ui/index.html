@@ -4,622 +4,626 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>LEARN</title>
   <style>
     :root {
-      --background-primary: #202020;
-      --background-secondary: #262626;
-      --background-modifier-hover: #303030;
-      --border: #363636;
-      --text: #dcddde;
-      --muted: #929292;
-      --faint: #6f6f6f;
-      --accent: #8b7cf6;
-      --accent-soft: #a99df8;
-      --frontier: #c4a7ff;
-      --danger: #e78a8a;
-      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #191919;
+      --panel: #232323;
+      --hover: #303030;
+      --border: #484848;
+      --text: #f0f0f0;
+      --muted: #c1c1c1;
+      --faint: #ababab;
+      --accent: #b9afff;
+      --known: #9384ff;
+      --ready: #dec4ff;
+      --later: #a9a9a9;
+      --warning: #f0ca82;
+      --danger: #ffaaaa;
       color: var(--text);
-      background: var(--background-primary);
+      background: var(--bg);
+      font: 14px/1.55 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-    body { font-size: 14px; line-height: 1.55; }
-    button, input { color: inherit; font: inherit; }
+    button, a { color: inherit; font: inherit; }
     button { border: 0; }
-    button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    a { color: var(--accent-soft); text-underline-offset: 3px; }
-
-    .app { height: 100%; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
-    .sidebar {
-      min-width: 0;
-      border-right: 1px solid var(--border);
-      background: var(--background-secondary);
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr) auto;
-    }
-    .vault {
-      height: 42px;
-      padding: 0 13px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 650;
-    }
-    .vault-mark { width: 14px; height: 14px; color: var(--accent); }
-    .vault-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .skip { position: fixed; z-index: 50; top: 8px; left: 8px; padding: 8px 10px; background: #fff; color: #111; transform: translateY(-160%); }
+    .skip:focus { transform: none; }
+    .app { height: 100%; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
+    .sidebar { min-width: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; border-right: 1px solid var(--border); background: var(--panel); }
+    .brand { min-height: 46px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); color: var(--text); font-weight: 700; text-decoration: none; }
+    .brand svg { width: 16px; color: var(--accent); }
+    .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .nav { padding: 9px; border-bottom: 1px solid var(--border); }
-    .nav-button, .note-button, .source-button {
-      width: 100%;
-      min-height: 32px;
-      padding: 5px 8px;
-      border-radius: 5px;
-      color: #b7b7b7;
-      background: transparent;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      text-align: left;
-      cursor: pointer;
+    .nav-link, .topic-link, .note-link {
+      width: 100%; min-height: 34px; padding: 6px 8px; border-radius: 6px; display: flex; align-items: center; gap: 8px;
+      color: var(--muted); text-align: left; text-decoration: none;
     }
-    .nav-button:hover, .note-button:hover, .source-button:hover,
-    .nav-button[aria-current="page"], .note-button[aria-current="page"], .source-button[aria-current="page"] {
-      color: var(--text);
-      background: var(--background-modifier-hover);
-    }
-    .icon { width: 17px; color: var(--muted); font: 14px/1 ui-monospace, monospace; text-align: center; }
+    .nav-link:hover, .topic-link:hover, .note-link:hover, [aria-current="page"] { color: var(--text); background: var(--hover); }
     .tree { min-height: 0; padding: 10px 8px 18px; overflow: auto; scrollbar-width: thin; }
-    .tree-label { margin: 4px 8px 6px; color: var(--faint); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
-    .project { margin: 0 0 10px; }
-    .project summary { padding: 4px 8px; color: #bdbdbd; cursor: pointer; font-weight: 600; list-style: none; }
-    .project summary::before { content: "›"; display: inline-block; width: 15px; color: var(--muted); }
+    .tree-label { margin: 9px 8px 5px; color: var(--faint); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .project { margin: 0 0 8px; }
+    .project summary { min-height: 32px; padding: 5px 8px; color: var(--muted); cursor: pointer; font-weight: 650; list-style: none; overflow-wrap: anywhere; }
+    .project summary::before { content: "›"; display: inline-block; width: 15px; color: var(--faint); }
     .project[open] summary::before { transform: rotate(90deg); }
     .project summary::-webkit-details-marker { display: none; }
-    .topic-list, .note-list, .source-list { margin: 0; padding: 0; list-style: none; }
-    .topic-link { display: block; padding: 4px 8px 4px 24px; border-radius: 5px; color: #aaa; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .topic-link:hover, .topic-link.current { color: var(--text); background: var(--background-modifier-hover); }
-    .note-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #777; }
-    .note-dot.known { background: var(--accent); }
-    .note-dot.frontier { background: var(--frontier); box-shadow: 0 0 0 2px rgb(196 167 255 / .16); }
-    .sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11px; }
-
-    .workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: 42px minmax(0, 1fr); }
-    .titlebar {
-      padding: 0 12px;
-      border-bottom: 1px solid var(--border);
-      background: var(--background-primary);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .menu { display: none; width: 28px; height: 28px; border-radius: 5px; background: transparent; cursor: pointer; }
-    .menu:hover { background: var(--background-modifier-hover); }
-    .up-link { min-height: 28px; padding: 3px 7px; border-radius: 5px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
-    .up-link:hover { color: var(--text); background: var(--background-modifier-hover); }
-    .breadcrumb { min-width: 0; flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .breadcrumb strong { color: var(--text); font-weight: 600; }
-    .status { padding: 2px 7px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-    .status.pending { color: var(--frontier); border-color: #5a4d78; }
-    .panes { position: relative; min-height: 0; }
-    .pane { position: absolute; inset: 0; display: none; min-width: 0; min-height: 0; background: var(--background-primary); }
-    .pane.active { display: block; }
-
-    .graph-pane { background: #1e1e1e; }
-    .graph-stage { position: absolute; inset: 0; overflow: hidden; }
-    #graph-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
-    #graph-canvas.dragging { cursor: grabbing; }
-    .graph-tools { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 4px; }
-    .tool-button { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); background: #292929e8; cursor: pointer; }
-    .tool-button:hover { color: var(--text); background: #333; }
-    .graph-key { position: absolute; left: 14px; bottom: 15px; color: var(--faint); font-size: 11px; pointer-events: none; }
-
-    .overview-pane, .note-pane, .source-pane, .session-pane { overflow: auto; }
-    .document { width: min(760px, calc(100% - 48px)); margin: 0 auto; padding: 58px 0 90px; }
-    .document h1 { margin: 0 0 9px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.035em; }
-    .document h2 { margin: 38px 0 12px; font-size: 24px; line-height: 1.25; }
-    .document h3 { margin: 30px 0 9px; font-size: 18px; }
-    .document p, .document ul, .document ol, .document blockquote, .document pre, .document table { margin: 0 0 18px; }
-    .document li + li { margin-top: 6px; }
-    .document blockquote { padding-left: 16px; border-left: 3px solid var(--accent); color: #b5b5b5; }
-    .document code { padding: 2px 5px; border-radius: 4px; background: #2c2c2c; font: .9em ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .document pre { padding: 16px; border: 1px solid var(--border); border-radius: 6px; overflow: auto; background: #181818; }
-    .document pre code { padding: 0; background: none; }
-    .document table { width: 100%; border-collapse: collapse; }
-    .document th, .document td { padding: 7px 9px; border: 1px solid var(--border); text-align: left; }
-    .meta { margin-bottom: 32px; color: var(--muted); font-size: 12px; }
-    .badge { display: inline-block; margin-right: 5px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
-    .badge.external { color: #dbbd7b; border-color: #6b5935; }
-    .badge.conflict { color: var(--danger); border-color: #704343; }
-    .citations { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); color: #aaa; font-size: 12px; }
-    .citations h2 { margin-top: 0; font-size: 15px; }
-    .empty {
-      position: absolute;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      color: #737373;
-      font-size: 14px;
-      letter-spacing: .01em;
-    }
-    .source-layout { height: 100%; display: grid; grid-template-columns: 230px minmax(0, 1fr); }
-    .source-index { padding: 10px 8px; border-right: 1px solid var(--border); background: var(--background-secondary); overflow: auto; }
-    .source-button { align-items: flex-start; flex-direction: column; gap: 0; }
-    .source-button small { color: var(--faint); }
-    .source-document { overflow: auto; }
-    .markdown { white-space: pre-wrap; overflow-wrap: anywhere; color: #b8b8b8; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .session-callout { margin-top: 28px; padding: 12px 14px; border-left: 3px solid var(--accent); background: #27252f; color: #c9c5e4; }
-    .overview-list { margin: 26px 0 0; padding: 0; list-style: none; }
-    .overview-link { margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); display: block; text-decoration: none; }
-    .overview-link:hover { background: var(--background-modifier-hover); border-color: #484848; }
-    .overview-link small { margin-left: 7px; color: var(--muted); }
-    .note-button { text-decoration: none; }
-    .data-error { position: fixed; z-index: 20; top: 50px; right: 12px; max-width: 360px; padding: 10px 12px; border: 1px solid #704343; border-radius: 6px; color: #efb0b0; background: #382424; }
-
+    .plain-list { margin: 0; padding: 0; list-style: none; }
+    .topic-link { min-height: 30px; padding-left: 23px; }
+    .note-link { align-items: flex-start; flex-wrap: wrap; }
+    .state-dot { width: 9px; height: 9px; margin-top: 6px; flex: none; border: 2px solid currentColor; border-radius: 50%; }
+    .state-dot.known { color: var(--known); background: currentColor; }
+    .state-dot.ready { color: var(--ready); background: transparent; }
+    .state-dot.later { color: var(--later); border-style: dashed; }
+    .note-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+    .state-label { width: 100%; padding-left: 17px; color: var(--faint); font-size: 11px; }
+    .sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12px; }
+    .workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr); }
+    .titlebar { padding: 0 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
+    .menu { display: none; width: 34px; height: 34px; border-radius: 6px; background: transparent; cursor: pointer; }
+    .menu:hover { background: var(--hover); }
+    .breadcrumb { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
+    .breadcrumb a { color: var(--muted); }
+    .breadcrumb strong { color: var(--text); }
+    .status { flex: none; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    .status.warning { color: var(--warning); border-color: #806b42; }
+    .status.danger { color: var(--danger); border-color: #884f4f; }
+    .view { min-width: 0; min-height: 0; overflow: auto; }
+    .document { width: min(820px, calc(100% - 48px)); margin: 0 auto; padding: 52px 0 90px; }
+    .document.wide { width: min(1180px, calc(100% - 48px)); }
+    h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.035em; }
+    h2 { margin: 34px 0 12px; font-size: 23px; line-height: 1.25; }
+    h3 { margin: 27px 0 9px; font-size: 18px; }
+    h4 { margin: 23px 0 8px; font-size: 15px; }
+    p, ul, ol, blockquote, pre { margin: 0 0 18px; }
+    li + li { margin-top: 6px; }
+    .lede { max-width: 70ch; color: var(--muted); font-size: 16px; }
+    .meta { margin: 0 0 28px; color: var(--faint); font-size: 12px; }
+    .empty { margin-top: 26px; padding: 22px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
+    .cards { margin: 26px 0 0; padding: 0; display: grid; gap: 10px; list-style: none; }
+    .card { padding: 13px 15px; display: block; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; }
+    .card:hover { border-color: #696969; background: var(--hover); }
+    .card strong { display: block; }
+    .card small { color: var(--muted); }
+    .callout { margin: 20px 0; padding: 12px 14px; border-left: 4px solid var(--warning); border-radius: 4px; background: #332e24; color: #f4dfb7; }
+    .callout.danger { border-color: var(--danger); background: #392626; color: #ffd0d0; }
+    .content-section { margin: 34px 0; padding: 1px 0 1px 18px; border-left: 4px solid var(--known); }
+    .content-section.external { border-color: var(--warning); background: linear-gradient(90deg, #332e2488, transparent 60%); }
+    .content-section.conflict { border-color: var(--danger); background: linear-gradient(90deg, #39262688, transparent 60%); }
+    .section-label, .badge { display: inline-block; margin: 0 5px 8px 0; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 650; text-transform: capitalize; }
+    blockquote { padding-left: 14px; border-left: 3px solid var(--border); color: var(--muted); }
+    code { padding: 2px 5px; border-radius: 4px; background: #303030; font: .92em ui-monospace, SFMono-Regular, Menlo, monospace; }
+    pre { padding: 16px; overflow: auto; border: 1px solid var(--border); border-radius: 7px; background: #111; }
+    pre code { padding: 0; background: none; }
+    .references { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+    .references h3 { margin-top: 0; font-size: 14px; }
+    .source-card { position: relative; }
+    .source-card .badge { margin-top: 8px; }
+    .source-problem { margin: 10px 0 0; color: var(--danger); }
+    .concept-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 24px; }
+    .relation-list { padding-left: 20px; }
+    .graph-frame { margin-top: 24px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; background: #151515; }
+    .graph { display: block; min-width: 100%; }
+    .edge { fill: none; stroke: #858585; stroke-width: 1.6; }
+    .graph-node rect { stroke-width: 2; rx: 8; }
+    .graph-node.known rect { fill: #3d3478; stroke: var(--known); }
+    .graph-node.ready rect { fill: #30283a; stroke: var(--ready); }
+    .graph-node.later rect { fill: #292929; stroke: var(--later); stroke-dasharray: 5 4; }
+    .graph-node:hover rect, .graph-node:focus rect { filter: brightness(1.25); }
+    .graph-node text { fill: var(--text); font-size: 13px; pointer-events: none; }
+    .graph-node .graph-state { fill: var(--muted); font-size: 11px; }
+    .graph-legend { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 12px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend-item .state-dot { margin: 0; }
+    .scrim { display: none; }
+    .data-error { position: fixed; z-index: 60; top: 58px; right: 14px; max-width: 420px; padding: 12px 14px; border: 1px solid #995858; border-radius: 7px; color: #ffd0d0; background: #392626; }
     @media (max-width: 760px) {
       .app { display: block; }
-      .sidebar { position: fixed; z-index: 10; inset: 0 auto 0 0; width: min(290px, 86vw); transform: translateX(-100%); transition: transform .16s ease; box-shadow: 12px 0 34px #0008; }
-      .sidebar.open { transform: translateX(0); }
       .workspace { height: 100%; }
+      .sidebar { position: fixed; z-index: 30; inset: 0 auto 0 0; width: min(310px, 88vw); transform: translateX(-105%); box-shadow: 15px 0 38px #0009; }
+      .sidebar.open { transform: none; }
       .menu { display: inline-grid; place-items: center; }
-      .source-layout { grid-template-columns: 1fr; }
-      .source-index { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--border); }
-      .document { width: min(100% - 32px, 760px); padding-top: 38px; }
+      .scrim { position: fixed; z-index: 20; inset: 0; display: block; width: 100%; height: 100%; background: #0009; cursor: default; }
+      .document, .document.wide { width: min(100% - 30px, 820px); padding-top: 34px; }
     }
-
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    @media (prefers-reduced-motion: no-preference) and (max-width: 760px) { .sidebar { transition: transform .16s ease; } }
   </style>
 </head>
 <body>
+  <button class="skip" id="skip" type="button">Skip to content</button>
   <div class="app">
     <aside class="sidebar" id="sidebar" aria-label="Learning workspace">
-      <div class="vault"><svg class="vault-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 3 7v10l9 5 9-5V7Zm0 2.3 6.8 3.8L12 12 5.2 8.1Zm-7 5.5 6 3.4v6L5 15.8Zm8 9.4v-6l6-3.4v6Z"/></svg><span class="vault-name" id="vault-name">LEARN</span></div>
-      <nav class="nav" id="view-nav" aria-label="Views">
-        <button class="nav-button" id="open-graph" type="button" aria-current="page"><span class="icon">◌</span>Graph</button>
-        <button class="nav-button" id="open-sources" type="button"><span class="icon">≡</span>Sources</button>
-        <button class="nav-button" id="open-session" type="button" hidden><span class="icon">?</span><span id="session-label">Session</span></button>
+      <a class="brand" id="brand" href="#workspace"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 3 7v10l9 5 9-5V7Zm0 2.3 6.8 3.8L12 12 5.2 8.1Zm-7 5.5 6 3.4v6L5 15.8Zm8 9.4v-6l6-3.4v6Z"/></svg><span id="workspace-name">LEARN</span></a>
+      <nav class="nav" id="view-nav" aria-label="Topic views">
+        <a class="nav-link" id="open-graph" href="#workspace">Concept graph</a>
+        <a class="nav-link" id="open-sources" href="#workspace">Sources</a>
+        <a class="nav-link" id="open-session" href="#workspace" hidden>Preview</a>
       </nav>
       <div class="tree">
         <p class="tree-label">Workspace</p>
         <div id="project-tree"></div>
-        <p class="tree-label" id="note-label">Notes</p>
-        <ul class="note-list" id="note-list"></ul>
+        <div id="concept-index" hidden><p class="tree-label">Concepts</p><ul class="plain-list" id="concept-list"></ul></div>
+        <div id="answer-index" hidden><p class="tree-label">General answers</p><ul class="plain-list" id="answer-list"></ul></div>
       </div>
-      <div class="sidebar-foot">Read only · use chat to learn or edit</div>
+      <div class="sidebar-foot">Read only · continue in chat</div>
     </aside>
-
+    <button class="scrim" id="scrim" type="button" aria-label="Close navigation" hidden></button>
     <section class="workspace">
       <header class="titlebar">
-        <button class="menu" id="menu" type="button" aria-label="Toggle sidebar">☰</button>
-        <a class="up-link" id="up-link" hidden><span aria-hidden="true">↑</span>Up</a>
-        <div class="breadcrumb" id="breadcrumb"></div>
-        <span class="status" id="status">synced</span>
+        <button class="menu" id="menu" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
+        <nav class="breadcrumb" id="breadcrumb" aria-label="Breadcrumb"></nav>
+        <span class="status" id="status" role="status" hidden></span>
       </header>
-      <main class="panes">
-        <section class="pane overview-pane" id="pane-overview"><article class="document" id="overview"></article></section>
-        <section class="pane graph-pane active" id="pane-graph" aria-label="Concept graph">
-          <div class="graph-stage" id="graph-stage">
-            <canvas id="graph-canvas" aria-label="Interactive prerequisite graph. Arrows point from prerequisite to dependent. Use the Notes list for keyboard access."></canvas>
-            <div class="empty" id="graph-empty" hidden>Generate learning materials in chat.</div>
-            <div class="graph-key" id="graph-key">Arrows: prerequisite → dependent · scroll to zoom · drag to move · click a note to open</div>
-            <div class="graph-tools" aria-label="Graph controls">
-              <button class="tool-button" id="zoom-out" type="button" aria-label="Zoom out">−</button>
-              <button class="tool-button" id="reset-view" type="button" aria-label="Reset graph view">⌂</button>
-              <button class="tool-button" id="zoom-in" type="button" aria-label="Zoom in">+</button>
-            </div>
-          </div>
-        </section>
-        <section class="pane note-pane" id="pane-note"><article class="document" id="note"></article><div class="empty" id="note-empty" hidden>Generate learning materials in chat.</div></section>
-        <section class="pane source-pane" id="pane-sources"><div class="source-layout"><ul class="source-list source-index" id="source-list"></ul><article class="source-document"><div class="document" id="source"></div></article></div></section>
-        <section class="pane session-pane" id="pane-session"><article class="document" id="session"></article></section>
-      </main>
+      <main class="view" id="main" tabindex="-1"></main>
     </section>
   </div>
-  <div class="data-error" id="data-error" role="alert" hidden>The rendered workspace data is invalid.</div>
-
+  <div class="data-error" id="data-error" role="alert" hidden>Rendered workspace data is invalid.</div>
   <script type="application/json" id="learn-data">__LEARN_DATA__</script>
   <script>
     (() => {
-      const fallback = { workspace: { name: "LEARN", projects: [] }, current: {}, topic: {}, graph: { nodes: [], edges: [] }, knownSet: [], sources: [], artifacts: [] };
-      let data = fallback;
+      let data;
       try { data = JSON.parse(document.getElementById("learn-data").textContent); }
-      catch (error) { document.getElementById("data-error").hidden = false; console.error(error); }
+      catch (error) { const alert = document.getElementById("data-error"); alert.textContent += ` ${error.message}`; alert.hidden = false; return; }
 
-      const $ = (selector, root = document) => root.querySelector(selector);
-      const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+      const $ = selector => document.querySelector(selector);
+      const main = $("#main");
+      const sidebar = $("#sidebar");
+      const workspace = $(".workspace");
+      const mobile = matchMedia("(max-width: 760px)");
       const text = value => value == null ? "" : String(value);
-      const safeHref = value => /^(#|\.\.?\/)/.test(text(value).trim()) ? text(value).trim() : "#";
-      const safeExternal = value => { try { const url = new URL(text(value)); return url.protocol === "https:" && !url.username && !url.password ? url.href : "#"; } catch { return "#"; } };
-      const page = data.page || { kind: "topic" };
-      const topic = data.topic || {};
-      const session = data.session || {};
-      const graph = session.active && session.proposedGraph ? session.proposedGraph : (data.graph || { nodes: [], edges: [] });
-      const known = new Set(session.active && Array.isArray(session.proposedKnownSet) ? session.proposedKnownSet : (data.knownSet || []));
-      const parents = new Map((graph.nodes || []).map(node => [node.id, []]));
-      (graph.edges || []).forEach(edge => parents.get(edge.to)?.push(edge.from));
-      const frontier = new Set((graph.nodes || []).filter(node => !known.has(node.id) && (parents.get(node.id) || []).every(id => known.has(id))).map(node => node.id));
-      const nodes = (graph.nodes || []).map(node => ({ ...node, state: known.has(node.id) ? "known" : frontier.has(node.id) ? "frontier" : "unknown" }));
-      const edges = graph.edges || [];
-      const sources = data.sources || [];
-      const artifacts = data.artifacts || [];
-      const byNode = new Map(nodes.map(node => [node.id, node]));
-      const bySource = new Map(sources.map(source => [source.id, source]));
-      const artifactFor = id => artifacts.find(artifact => artifact.conceptId === id);
-      const currentProject = data.workspace?.projects?.find(project => project.id === data.current?.projectId);
-      const currentTopicHref = currentProject?.topics?.find(item => item.id === data.current?.topicId)?.href;
-      document.title = `${page.title || "LEARN"} — LEARN`;
+      const compareConcepts = (left, right) => left.label === right.label ? (left.id < right.id ? -1 : left.id > right.id ? 1 : 0) : (left.label < right.label ? -1 : 1);
+      const node = (tag, attributes = {}, ...children) => {
+        const element = document.createElement(tag);
+        for (const [name, value] of Object.entries(attributes)) {
+          if (value == null || value === false) continue;
+          if (name === "class") element.className = value;
+          else if (name === "text") element.textContent = value;
+          else element.setAttribute(name, value === true ? "" : value);
+        }
+        for (const child of children.flat()) if (child != null) element.append(child.nodeType ? child : document.createTextNode(text(child)));
+        return element;
+      };
+      const routeHref = (...parts) => `#${parts.map(encodeURIComponent).join("/")}`;
+      const topicFor = (projectId, topicId) => data.topics.find(topic => topic.projectId === projectId && topic.id === topicId);
+      const projectFor = id => data.workspace.projects.find(project => project.id === id);
+      const sourceFor = (topic, id) => topic.sources.find(source => source.id === id);
+      const safeExternal = value => { try { const url = new URL(text(value)); return url.protocol === "https:" && !url.username && !url.password ? url.href : null; } catch { return null; } };
+      const safeLocal = value => { if (typeof value !== "string" || !value) return null; try { const url = new URL(value, document.baseURI); return url.protocol === "file:" ? url.href : null; } catch { return null; } };
 
-      function sanitize(fragment) {
-        const template = document.createElement("template");
-        template.innerHTML = text(fragment);
-        const blocked = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "FORM", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "LINK", "META", "SVG", "MATH", "IMG", "VIDEO", "AUDIO"]);
-        const allowed = new Set(["P", "H2", "H3", "H4", "UL", "OL", "LI", "STRONG", "EM", "CODE", "PRE", "BLOCKQUOTE", "A", "HR", "BR", "DIV", "SECTION", "ASIDE", "SPAN", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "SUP", "SUB", "DL", "DT", "DD", "DETAILS", "SUMMARY"]);
-        const safeClasses = new Set(["content-note", "content-label", "external", "conflict", "canonical"]);
-        [...template.content.querySelectorAll("*")].forEach(node => {
-          if (blocked.has(node.tagName)) { node.remove(); return; }
-          if (!allowed.has(node.tagName)) { node.replaceWith(...node.childNodes); return; }
-          const href = node.tagName === "A" ? text(node.getAttribute("href")).trim() : "";
-          const classes = [...node.classList].filter(name => safeClasses.has(name));
-          [...node.attributes].forEach(attribute => node.removeAttribute(attribute.name));
-          if (classes.length) node.className = classes.join(" ");
-          if (node.tagName === "A") {
-            const safe = href.startsWith("#") ? href : safeExternal(href);
-            node.setAttribute("href", safe);
-            if (safe.startsWith("https://")) { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer"); }
-          }
+      function defaultRoute() {
+        const current = data.workspace.current;
+        return current && topicFor(current.projectId, current.topicId) ? { kind: "topic", projectId: current.projectId, topicId: current.topicId, view: "graph" } : { kind: "workspace" };
+      }
+
+      function parseRoute() {
+        let parts;
+        try { parts = location.hash.slice(1).split("/").filter(Boolean).map(decodeURIComponent); } catch { return defaultRoute(); }
+        if (!parts.length) return defaultRoute();
+        if (parts[0] === "workspace") return { kind: "workspace" };
+        if (parts[0] === "project" && projectFor(parts[1])) return { kind: "project", projectId: parts[1] };
+        const topic = topicFor(parts[1], parts[2]);
+        if (!topic) return defaultRoute();
+        if (parts[0] === "topic") return { kind: "topic", projectId: parts[1], topicId: parts[2], view: new Set(["graph", "sources", "session"]).has(parts[3]) ? parts[3] : "graph" };
+        if (parts[0] === "concept" && graphState(topic).graph.nodes.some(item => item.id === parts[3])) return { kind: "concept", projectId: parts[1], topicId: parts[2], conceptId: parts[3] };
+        if (parts[0] === "artifact" && topic.artifacts.some(item => item.id === parts[3])) return { kind: "artifact", projectId: parts[1], topicId: parts[2], artifactId: parts[3] };
+        return { kind: "topic", projectId: parts[1], topicId: parts[2], view: "graph" };
+      }
+
+      function activeSession(topic) {
+        const current = data.workspace.current;
+        return data.session?.active && current?.projectId === topic?.projectId && current?.topicId === topic?.id ? data.session : null;
+      }
+
+      function graphState(topic) {
+        const session = activeSession(topic);
+        const proposal = session?.kind === "graph-proposal";
+        const graph = proposal ? session.proposedGraph : topic.graph;
+        const known = new Set(proposal ? session.proposedKnownSet : topic.knownSet);
+        const paused = (topic.reconciliationRequired && !proposal) || (proposal && session.stale);
+        const parents = new Map(graph.nodes.map(item => [item.id, []]));
+        graph.edges.forEach(edge => parents.get(edge.to)?.push(edge.from));
+        const frontier = new Set(paused ? [] : graph.nodes.filter(item => !known.has(item.id) && parents.get(item.id).every(id => known.has(id))).map(item => item.id));
+        const state = id => known.has(id) ? "known" : frontier.has(id) ? "ready" : "later";
+        return { graph, known, frontier, state, paused, session, proposal };
+      }
+
+      function closeSidebar(focusMenu = false) {
+        sidebar.classList.remove("open");
+        syncSidebar();
+        if (focusMenu && mobile.matches) $("#menu").focus();
+      }
+
+      function syncSidebar() {
+        if (!mobile.matches) sidebar.classList.remove("open");
+        const open = mobile.matches && sidebar.classList.contains("open");
+        const closed = mobile.matches && !open;
+        sidebar.inert = closed;
+        workspace.inert = open;
+        sidebar.setAttribute("aria-hidden", closed ? "true" : "false");
+        $("#scrim").hidden = !open;
+        $("#menu").setAttribute("aria-expanded", open ? "true" : "false");
+        $("#menu").setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+      }
+
+      function setStatus(topic, route, artifact) {
+        const status = $("#status");
+        status.hidden = !topic;
+        status.className = "status";
+        if (!topic) return;
+        const session = activeSession(topic);
+        const previewAffectsView = session?.kind === "graph-proposal" || (route.kind === "topic" && route.view === "session");
+        if (session?.stale && previewAffectsView) { status.textContent = "Stale preview"; status.classList.add("danger"); }
+        else if (artifact?.stale) { status.textContent = "Stale artifact"; status.classList.add("danger"); }
+        else if (session?.kind === "graph-proposal") { status.textContent = "Graph preview"; status.classList.add("warning"); }
+        else if (topic.reconciliationRequired) { status.textContent = topic.reconciliationReasons.length ? "Graph stale" : "Review needed"; status.classList.add(topic.reconciliationReasons.length ? "danger" : "warning"); }
+        else if (session?.kind === "answer" && route.view === "session") { status.textContent = "Answer preview"; status.classList.add("warning"); }
+        else status.textContent = "Current";
+      }
+
+      function renderBreadcrumb(route, topic, artifact) {
+        const host = $("#breadcrumb");
+        host.replaceChildren();
+        const parts = [{ label: data.workspace.name, href: routeHref("workspace") }];
+        const project = route.projectId && projectFor(route.projectId);
+        if (project) parts.push({ label: project.name, href: routeHref("project", project.id) });
+        if (topic) parts.push({ label: topic.title, href: routeHref("topic", topic.projectId, topic.id, "graph") });
+        if (artifact) parts.push({ label: artifact.title });
+        else if (route.kind === "concept") parts.push({ label: graphState(topic).graph.nodes.find(item => item.id === route.conceptId)?.label });
+        else if (route.kind === "topic" && route.view !== "graph") parts.push({ label: route.view === "sources" ? "Sources" : "Preview" });
+        parts.forEach((part, index) => {
+          const last = index === parts.length - 1;
+          host.append(last ? node("strong", { text: part.label }) : node("a", { href: part.href, text: part.label }));
+          if (!last) host.append(document.createTextNode("  ›  "));
         });
-        return template.content;
       }
 
-      function setPane(name) {
-        $$(".pane").forEach(pane => pane.classList.toggle("active", pane.id === `pane-${name}`));
-        $$(".nav-button").forEach(button => button.removeAttribute("aria-current"));
-        const active = name === "graph" ? $("#open-graph") : name === "sources" ? $("#open-sources") : name === "session" ? $("#open-session") : null;
-        active?.setAttribute("aria-current", "page");
-        $("#sidebar").classList.remove("open");
-        if (name !== "note") setUp(page.parentHref, page.parentLabel);
-        if (name === "graph") requestAnimationFrame(() => {
-          if (!resizeCanvas()) return;
-          if (!graphStarted) { graphStarted = true; settleGraph(); resetView(); }
-          else drawGraph();
-        });
-      }
-
-      function setUp(href, label) {
-        const up = $("#up-link");
-        up.hidden = !href;
-        if (!href) { up.removeAttribute("href"); up.removeAttribute("aria-label"); return; }
-        up.href = safeHref(href);
-        up.setAttribute("aria-label", `Up to ${label || "parent"}`);
-      }
-
-      function renderWorkspace() {
-        $("#vault-name").textContent = data.workspace?.name || "LEARN";
-        const hasTopic = Boolean(data.current?.topicId);
-        $("#view-nav").hidden = !hasTopic;
-        $("#note-label").hidden = !hasTopic;
+      function renderSidebar(route, topic) {
+        $("#workspace-name").textContent = data.workspace.name;
         const tree = $("#project-tree");
-        (data.workspace?.projects || []).forEach(project => {
-          const details = document.createElement("details");
-          details.className = "project";
-          details.open = project.id === data.current?.projectId;
-          const summary = document.createElement("summary");
-          summary.textContent = project.name;
-          const list = document.createElement("ul");
-          list.className = "topic-list";
-          (project.topics || []).forEach(item => {
-            const li = document.createElement("li");
-            const link = document.createElement("a");
-            link.className = "topic-link" + (project.id === data.current?.projectId && item.id === data.current?.topicId ? " current" : "");
-            link.href = safeHref(item.href);
-            link.textContent = item.name;
-            li.append(link); list.append(li);
+        tree.replaceChildren();
+        data.workspace.projects.forEach(project => {
+          const details = node("details", { class: "project" });
+          details.open = project.id === route.projectId;
+          details.append(node("summary", { text: project.name }));
+          const list = node("ul", { class: "plain-list" });
+          project.topics.forEach(item => {
+            const current = project.id === route.projectId && item.id === route.topicId;
+            const link = node("a", { class: "topic-link", href: routeHref("topic", project.id, item.id, "graph"), text: item.name });
+            if (current) link.setAttribute("aria-current", "page");
+            list.append(node("li", {}, link));
           });
-          details.append(summary, list); tree.append(details);
+          if (!project.topics.length) list.append(node("li", { class: "meta", text: "No topics yet." }));
+          details.append(list); tree.append(details);
         });
+        const nav = $("#view-nav");
+        nav.hidden = !topic;
+        [$("#open-graph"), $("#open-sources"), $("#open-session")].forEach(link => link.removeAttribute("aria-current"));
+        if (!topic) { $("#concept-index").hidden = true; $("#answer-index").hidden = true; return; }
+        $("#open-graph").href = routeHref("topic", topic.projectId, topic.id, "graph");
+        $("#open-sources").href = routeHref("topic", topic.projectId, topic.id, "sources");
+        const session = activeSession(topic);
+        $("#open-session").hidden = !session;
+        if (session) $("#open-session").href = routeHref("topic", topic.projectId, topic.id, "session");
+        if (route.kind === "topic") $(route.view === "sources" ? "#open-sources" : route.view === "session" ? "#open-session" : "#open-graph").setAttribute("aria-current", "page");
 
-        const notes = $("#note-list");
-        nodes.slice().sort((a, b) => a.label.localeCompare(b.label)).forEach(node => {
-          const li = document.createElement("li");
-          const artifact = artifactFor(node.id);
-          const button = document.createElement(artifact ? "a" : "button");
-          button.className = "note-button";
-          if (artifact) button.href = safeHref(artifact.href);
-          else { button.type = "button"; button.addEventListener("click", () => openNote(node.id)); }
-          if (artifact?.id === page.artifactId) button.setAttribute("aria-current", "page");
-          const dot = document.createElement("span");
-          dot.className = `note-dot ${node.state}`;
-          button.append(dot, document.createTextNode(node.label));
-          li.append(button); notes.append(li);
+        const graph = graphState(topic);
+        const state = graph.state;
+        const artifacts = new Map(topic.artifacts.filter(item => item.conceptId).map(item => [item.conceptId, item]));
+        const concepts = $("#concept-list");
+        concepts.replaceChildren();
+        graph.graph.nodes.slice().sort(compareConcepts).forEach(concept => {
+          const artifact = artifacts.get(concept.id);
+          const value = state(concept.id);
+          const label = value === "known" ? "Known" : value === "ready" ? "Ready next" : "Later";
+          const href = artifact ? routeHref("artifact", topic.projectId, topic.id, artifact.id) : routeHref("concept", topic.projectId, topic.id, concept.id);
+          const link = node("a", { class: "note-link", href }, node("span", { class: `state-dot ${value}`, "aria-hidden": "true" }), node("span", { class: "note-name", text: concept.label }), node("span", { class: "state-label", text: artifact?.stale ? `${label} · stale material` : label }));
+          if ((route.kind === "concept" && route.conceptId === concept.id) || (route.kind === "artifact" && route.artifactId === artifact?.id)) link.setAttribute("aria-current", "page");
+          concepts.append(node("li", {}, link));
         });
-
-        [data.workspace?.name, currentProject?.name, data.current?.topicId && topic.title, page.kind === "artifact" && page.title].filter(Boolean).forEach((part, index, all) => {
-          const element = document.createElement(index === all.length - 1 ? "strong" : "span");
-          element.textContent = part;
-          $("#breadcrumb").append(element);
-          if (index < all.length - 1) $("#breadcrumb").append(document.createTextNode("  ›  "));
-        });
-        const pending = Boolean(topic.graphReconciliationRequired || session.active);
-        $("#status").textContent = pending ? (session.active ? "preview" : "review needed") : "synced";
-        $("#status").classList.toggle("pending", pending);
-        setUp(page.parentHref, page.parentLabel);
+        $("#concept-index").hidden = !graph.graph.nodes.length;
+        const answers = topic.artifacts.filter(item => item.conceptId === null);
+        const answerList = $("#answer-list");
+        answerList.replaceChildren(...answers.map(item => {
+          const link = node("a", { class: "note-link", href: routeHref("artifact", topic.projectId, topic.id, item.id), text: item.title });
+          if (route.kind === "artifact" && route.artifactId === item.id) link.setAttribute("aria-current", "page");
+          return node("li", {}, link);
+        }));
+        $("#answer-index").hidden = !answers.length;
       }
 
-      function renderOverview() {
-        if (!["workspace", "project"].includes(page.kind)) return;
-        const host = $("#overview");
-        const title = document.createElement("h1"); title.textContent = page.title || "LEARN";
-        const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = page.kind === "workspace" ? "Workspace" : "Project";
-        const list = document.createElement("ul"); list.className = "overview-list";
-        const items = page.kind === "workspace" ? (data.workspace?.projects || []) : (currentProject?.topics || []);
-        items.forEach(item => {
-          const li = document.createElement("li");
-          const link = document.createElement("a"); link.className = "overview-link"; link.href = safeHref(item.href);
-          const name = document.createElement("strong"); name.textContent = item.name;
-          const detail = document.createElement("small"); detail.textContent = page.kind === "workspace" ? `${item.topics?.length || 0} topic${item.topics?.length === 1 ? "" : "s"}` : "Topic";
-          link.append(name, detail); li.append(link); list.append(li);
-        });
-        host.append(title, meta, list);
-      }
-
-      function renderArtifact(artifact) {
-        const host = $("#note");
-        host.replaceChildren();
-        const heading = document.createElement("h1");
-        heading.textContent = artifact.title;
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        (artifact.labels || ["canonical"]).forEach(label => {
-          const badge = document.createElement("span");
-          badge.className = `badge ${label}`;
-          badge.textContent = label;
-          meta.append(badge);
-        });
-        if (artifact.summary) meta.append(document.createTextNode(` ${artifact.summary}`));
-        host.append(heading, meta, sanitize(artifact.html || ""));
-        if (artifact.citations?.length) {
-          const citations = document.createElement("section");
-          citations.className = "citations";
-          citations.innerHTML = "<h2>References</h2><ol></ol>";
-          artifact.citations.forEach(citation => {
-            const li = document.createElement("li");
-            const label = bySource.get(citation.sourceId)?.title || citation.label || citation.sourceId || "Source";
-            if (citation.href) {
-              const link = document.createElement("a"); link.href = safeExternal(citation.href); link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = label; li.append(link);
-            } else li.append(document.createTextNode(label));
-            const detail = [citation.locator, citation.note].filter(Boolean).join(" · ");
-            if (detail) li.append(document.createTextNode(` — ${detail}`));
-            $("ol", citations).append(li);
-          });
-          host.append(citations);
+      function appendInline(host, value) {
+        const inlinePattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\[[^\]\n]+\]\([^\s)]+\)|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_]))/gu;
+        let last = 0;
+        for (const match of value.matchAll(inlinePattern)) {
+          if (match.index > last) host.append(document.createTextNode(value.slice(last, match.index)));
+          const token = match[0];
+          if (token.startsWith("`")) host.append(node("code", { text: token.slice(1, -1) }));
+          else if (token.startsWith("**") || token.startsWith("__")) host.append(node("strong", { text: token.slice(2, -2) }));
+          else if (token.startsWith("[")) {
+            const parts = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+            const href = safeExternal(parts[2]);
+            host.append(href ? node("a", { href, target: "_blank", rel: "noopener noreferrer", text: parts[1] }) : document.createTextNode(parts[1]));
+          } else host.append(node("em", { text: token.slice(1, -1) }));
+          last = match.index + token.length;
         }
+        if (last < value.length) host.append(document.createTextNode(value.slice(last)));
       }
 
-      function openNote(id) {
-        $$(".note-button").forEach(button => button.removeAttribute("aria-current"));
-        const ordered = nodes.slice().sort((a, b) => a.label.localeCompare(b.label));
-        const index = ordered.findIndex(node => node.id === id);
-        if (index >= 0) $$(".note-button")[index]?.setAttribute("aria-current", "page");
-        const artifact = artifactFor(id);
-        if (artifact?.href) { window.location.href = safeHref(artifact.href); return; }
-        $("#note").hidden = !artifact;
-        $("#note-empty").hidden = Boolean(artifact);
-        if (artifact) renderArtifact(artifact);
-        setPane("note");
-        setUp(currentTopicHref, topic.title);
-      }
-
-      function renderSources() {
-        const list = $("#source-list");
-        sources.forEach((source, index) => {
-          const li = document.createElement("li");
-          const button = document.createElement("button");
-          button.className = "source-button";
-          button.type = "button";
-          const strong = document.createElement("strong"); strong.textContent = source.title;
-          const small = document.createElement("small"); small.textContent = [source.type, source.author].filter(Boolean).join(" · ");
-          button.append(strong, small);
-          button.addEventListener("click", () => showSource(source.id));
-          li.append(button); list.append(li);
-          if (!index) showSource(source.id);
-        });
-        if (!sources.length) $("#source").innerHTML = '<div class="empty">No canonical sources.</div>';
-      }
-
-      function showSource(id) {
-        const source = sources.find(item => item.id === id);
-        if (!source) return;
-        $$(".source-button").forEach((button, index) => button.setAttribute("aria-current", sources[index]?.id === id ? "page" : "false"));
-        const host = $("#source");
-        host.replaceChildren();
-        const title = document.createElement("h1"); title.textContent = source.title;
-        const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = [source.author, source.locator, source.addedAt].filter(Boolean).join(" · ");
-        const pre = document.createElement("pre"); pre.className = "markdown"; pre.textContent = source.markdown || "";
-        host.append(title, meta, pre);
-      }
-
-      function renderSession() {
-        if (!session.active) return;
-        $("#open-session").hidden = false;
-        const names = { "graph-proposal": "Graph proposal", answer: "Answer" };
-        $("#session-label").textContent = names[session.kind] || "Session";
-        const host = $("#session");
-        const title = document.createElement("h1"); title.textContent = session.title || names[session.kind] || "Session";
-        host.append(title);
-        if (session.context) { const context = document.createElement("p"); context.className = "meta"; context.textContent = session.context; host.append(context); }
-        if (session.html) host.append(sanitize(session.html));
-        const callout = document.createElement("div"); callout.className = "session-callout"; callout.textContent = session.prompt || "Continue in chat."; host.append(callout);
-      }
-
-      const canvas = $("#graph-canvas");
-      const context = canvas.getContext("2d");
-      let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null, graphStarted = false;
-      const degree = new Map(nodes.map(node => [node.id, 0]));
-      edges.forEach(edge => { degree.set(edge.from, (degree.get(edge.from) || 0) + 1); degree.set(edge.to, (degree.get(edge.to) || 0) + 1); });
-      const points = nodes.map((node, index) => {
-        let hash = 2166136261;
-        for (const char of node.id) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
-        const angle = index * 2.399963 + (hash >>> 0) / 4294967296;
-        const radius = 45 + 22 * Math.sqrt(index);
-        const nodeRadius = 4 + Math.min(7, Math.sqrt(degree.get(node.id) || 0) * 2.2);
-        return { ...node, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0, radius: nodeRadius, mass: nodeRadius * nodeRadius / 16 };
-      });
-      const byPoint = new Map(points.map(point => [point.id, point]));
-      let simulationFrame = null, simulationTicks = 0;
-
-      function tickGraph() {
-        // ponytail: pairwise repulsion is simplest; use Barnes-Hut if topics grow past a few hundred concepts.
-        for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-          const a = points[i], b = points[j], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
-          const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
-          a.vx -= dx * force / a.mass; a.vy -= dy * force / a.mass; b.vx += dx * force / b.mass; b.vy += dy * force / b.mass;
-        }
-        edges.forEach(edge => {
-          const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
-          const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1, force = (distance - 112) * .012;
-          a.vx += dx / distance * force / a.mass; a.vy += dy / distance * force / a.mass;
-          b.vx -= dx / distance * force / b.mass; b.vy -= dy / distance * force / b.mass;
-        });
-        let movement = 0;
-        points.forEach(point => {
-          if (drag?.node === point) { point.vx = point.vy = 0; return; }
-          point.vx = (point.vx - point.x * .0025) * .78; point.vy = (point.vy - point.y * .0025) * .78;
-          point.x += point.vx; point.y += point.vy; movement += Math.abs(point.vx) + Math.abs(point.vy);
-        });
-        return movement;
-      }
-
-      function runSimulation() {
-        simulationFrame = null;
-        const movement = tickGraph() + tickGraph();
-        simulationTicks += 2; drawGraph();
-        if (simulationTicks < 260 && movement > .01) simulationFrame = requestAnimationFrame(runSimulation);
-      }
-
-      function settleGraph() {
-        let movement = Infinity, ticks = 0;
-        while (ticks < 4000 && movement > .01) { movement = tickGraph() + tickGraph(); ticks += 2; }
-      }
-
-      function heatGraph() {
-        simulationTicks = 0;
-        if (simulationFrame === null) simulationFrame = requestAnimationFrame(runSimulation);
-      }
-
-      function screen(point) { return { x: width / 2 + (point.x + panX) * scale, y: height / 2 + (point.y + panY) * scale }; }
-      function nodeAt(x, y) {
-        for (let i = points.length - 1; i >= 0; i--) { const position = screen(points[i]); if (Math.hypot(x - position.x, y - position.y) <= Math.max(10, points[i].radius * scale + 5)) return points[i]; }
-      }
-      function related(id, edge) { return !id || edge.from === id || edge.to === id; }
-
-      function drawGraph() {
-        context.clearRect(0, 0, width, height);
-        context.lineWidth = 1;
-        edges.forEach(edge => {
-          const a = byPoint.get(edge.from), b = byPoint.get(edge.to); if (!a || !b) return;
-          const from = screen(a), to = screen(b);
-          const dx = to.x - from.x, dy = to.y - from.y, distance = Math.hypot(dx, dy) || 1;
-          const ux = dx / distance, uy = dy / distance, arrow = 9, halfWidth = 4.5;
-          const fromRadius = Math.max(2.5, a.radius * Math.sqrt(scale));
-          const tipX = to.x - ux * (Math.max(2.5, b.radius * Math.sqrt(scale)) + 2), tipY = to.y - uy * (Math.max(2.5, b.radius * Math.sqrt(scale)) + 2);
-          const baseX = tipX - ux * arrow, baseY = tipY - uy * arrow;
-          context.strokeStyle = context.fillStyle = hoverId && !related(hoverId, edge) ? "#343434" : "#686868";
-          context.beginPath(); context.moveTo(from.x + ux * fromRadius, from.y + uy * fromRadius); context.lineTo(baseX, baseY); context.stroke();
-          context.beginPath(); context.moveTo(tipX, tipY); context.lineTo(baseX - uy * halfWidth, baseY + ux * halfWidth); context.lineTo(baseX + uy * halfWidth, baseY - ux * halfWidth); context.closePath(); context.fill();
-        });
-        points.forEach(point => {
-          const position = screen(point), connected = !hoverId || point.id === hoverId || edges.some(edge => related(hoverId, edge) && (edge.from === point.id || edge.to === point.id));
-          context.globalAlpha = connected ? 1 : .22;
-          context.fillStyle = point.state === "known" ? "#8b7cf6" : point.state === "frontier" ? "#c4a7ff" : "#a0a0a0";
-          if (point.id === hoverId) { context.shadowColor = "#b7adff"; context.shadowBlur = 12; }
-          context.beginPath(); context.arc(position.x, position.y, Math.max(2.5, point.radius * Math.sqrt(scale)), 0, Math.PI * 2); context.fill();
-          context.shadowBlur = 0;
-          if (scale > .42 || point.id === hoverId) {
-            context.font = `${point.id === hoverId ? 600 : 400} ${Math.max(10, Math.min(14, 11 * Math.sqrt(scale)))}px Inter, sans-serif`;
-            context.fillStyle = point.id === hoverId ? "#f1f1f1" : "#bcbcbc";
-            context.fillText(point.label, position.x + 9, position.y + 4);
+      function renderMarkdown(markdown) {
+        const fragment = document.createDocumentFragment();
+        const lines = text(markdown).replace(/\r\n?/g, "\n").split("\n");
+        const special = line => !line.trim() || /^```/.test(line) || /^#{1,6}\s+/.test(line) || /^>\s?/.test(line) || /^\s*[-+*]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line) || /^(?:---+|\*\*\*+)\s*$/.test(line);
+        for (let index = 0; index < lines.length;) {
+          const line = lines[index];
+          if (!line.trim()) { index += 1; continue; }
+          const fence = line.match(/^```([a-z0-9_-]*)\s*$/i);
+          if (fence) {
+            const code = [];
+            for (index += 1; index < lines.length && !/^```\s*$/.test(lines[index]); index += 1) code.push(lines[index]);
+            if (index < lines.length) index += 1;
+            const codeNode = node("code", { text: code.join("\n") });
+            if (fence[1]) codeNode.setAttribute("data-language", fence[1]);
+            fragment.append(node("pre", {}, codeNode)); continue;
           }
-        });
-        context.globalAlpha = 1;
-      }
-
-      function resetView() {
-        if (!points.length) return;
-        const graphBounds = atScale => {
-          const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-          points.forEach(point => {
-            const x = point.x * atScale, y = point.y * atScale;
-            const radius = Math.max(2.5, point.radius * Math.sqrt(atScale));
-            const fontSize = Math.max(10, Math.min(14, 11 * Math.sqrt(atScale)));
-            context.font = `400 ${fontSize}px Inter, sans-serif`;
-            const labelWidth = atScale > .42 ? 9 + context.measureText(point.label).width : radius;
-            bounds.minX = Math.min(bounds.minX, x - radius);
-            bounds.maxX = Math.max(bounds.maxX, x + Math.max(radius, labelWidth));
-            bounds.minY = Math.min(bounds.minY, y - Math.max(radius, atScale > .42 ? fontSize - 4 : 0));
-            bounds.maxY = Math.max(bounds.maxY, y + Math.max(radius, atScale > .42 ? 4 + fontSize / 4 : 0));
-          });
-          return bounds;
-        };
-        const padding = 36;
-        let low = .05, high = 1.35;
-        for (let i = 0; i < 20; i++) {
-          const candidate = (low + high) / 2, bounds = graphBounds(candidate);
-          if (bounds.maxX - bounds.minX <= width - padding * 2 && bounds.maxY - bounds.minY <= height - padding * 2) low = candidate;
-          else high = candidate;
+          const heading = line.match(/^(#{1,6})\s+(.+)$/);
+          if (heading) { const h = node(heading[1].length >= 4 ? "h4" : "h3"); appendInline(h, heading[2]); fragment.append(h); index += 1; continue; }
+          if (/^(?:---+|\*\*\*+)\s*$/.test(line)) { fragment.append(node("hr")); index += 1; continue; }
+          if (/^>\s?/.test(line)) {
+            const quote = [];
+            while (index < lines.length && /^>\s?/.test(lines[index])) quote.push(lines[index++].replace(/^>\s?/, ""));
+            const paragraph = node("p"); appendInline(paragraph, quote.join(" ")); fragment.append(node("blockquote", {}, paragraph)); continue;
+          }
+          const listMatch = line.match(/^\s*([-+*]|\d+[.)])\s+(.+)$/);
+          if (listMatch) {
+            const ordered = /^\d/.test(listMatch[1]);
+            const list = node(ordered ? "ol" : "ul");
+            if (ordered) list.start = Number.parseInt(listMatch[1], 10);
+            while (index < lines.length) {
+              const item = lines[index].match(/^\s*([-+*]|\d+[.)])\s+(.+)$/);
+              if (!item || /^\d/.test(item[1]) !== ordered) break;
+              const li = node("li"); appendInline(li, item[2]); list.append(li); index += 1;
+            }
+            fragment.append(list); continue;
+          }
+          const paragraphLines = [line];
+          index += 1;
+          while (index < lines.length && !special(lines[index])) paragraphLines.push(lines[index++]);
+          const paragraph = node("p"); appendInline(paragraph, paragraphLines.join(" ")); fragment.append(paragraph);
         }
-        scale = low;
-        const bounds = graphBounds(scale);
-        panX = -(bounds.minX + bounds.maxX) / (2 * scale); panY = -(bounds.minY + bounds.maxY) / (2 * scale);
-        drawGraph();
+        return fragment;
       }
 
-      function resizeCanvas() {
-        const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return false;
-        const ratio = Math.min(2, window.devicePixelRatio || 1);
-        width = bounds.width; height = bounds.height; canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-        context.setTransform(ratio, 0, 0, ratio, 0, 0); return true;
+      function citationNode(citation, topic) {
+        const item = node("li");
+        if (citation.kind === "canonical") {
+          const source = sourceFor(topic, citation.sourceId);
+          const href = source && safeLocal(source.href);
+          item.append(href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || citation.sourceId }));
+          item.append(document.createTextNode(` — ${citation.locator}${citation.note ? ` · ${citation.note}` : ""}`));
+        } else {
+          const href = safeExternal(citation.href);
+          item.append(href ? node("a", { href, target: "_blank", rel: "noopener noreferrer", text: citation.label }) : node("strong", { text: citation.label }));
+          if (citation.note) item.append(document.createTextNode(` — ${citation.note}`));
+        }
+        return item;
       }
 
-      canvas.addEventListener("pointerdown", event => {
-        const node = nodeAt(event.offsetX, event.offsetY);
-        drag = { node, x: event.clientX, y: event.clientY, panX, panY, moved: false };
-        canvas.setPointerCapture(event.pointerId); canvas.classList.add("dragging");
-      });
-      canvas.addEventListener("pointermove", event => {
-        if (!drag) { hoverId = nodeAt(event.offsetX, event.offsetY)?.id || null; canvas.style.cursor = hoverId ? "pointer" : "grab"; drawGraph(); return; }
-        const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.moved ||= Math.hypot(dx, dy) > 4;
-        if (drag.node) { drag.node.x += dx / scale; drag.node.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; heatGraph(); }
-        else { panX = drag.panX + dx / scale; panY = drag.panY + dy / scale; }
-        drawGraph();
-      });
-      canvas.addEventListener("pointerup", event => {
-        if (drag?.node && !drag.moved) openNote(drag.node.id);
-        drag = null; canvas.releasePointerCapture(event.pointerId); canvas.classList.remove("dragging");
-      });
-      canvas.addEventListener("pointerleave", () => { if (!drag) { hoverId = null; drawGraph(); } });
-      canvas.addEventListener("wheel", event => {
-        event.preventDefault();
-        const beforeX = (event.offsetX - width / 2) / scale - panX, beforeY = (event.offsetY - height / 2) / scale - panY;
-        scale = Math.max(.05, Math.min(4, scale * Math.exp(-event.deltaY * .001)));
-        panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph();
-      }, { passive: false });
+      function renderSections(content, topic) {
+        const byCitation = new Map(content.citations.map(citation => [citation.id, citation]));
+        return content.sections.map(section => {
+          const host = node("section", { class: `content-section ${section.kind}` });
+          host.append(node("span", { class: "section-label", text: section.kind }));
+          if (section.purpose) host.append(node("span", { class: "section-label", text: section.purpose }));
+          host.append(node("h2", { text: section.title }), renderMarkdown(section.markdown));
+          const references = node("footer", { class: "references" }, node("h3", { text: "References" }));
+          const list = node("ol");
+          section.citationIds.forEach(id => list.append(citationNode(byCitation.get(id), topic)));
+          references.append(list); host.append(references);
+          return host;
+        });
+      }
 
-      renderWorkspace(); renderOverview(); renderSources(); renderSession();
-      $("#graph-empty").hidden = Boolean(nodes.length);
-      $("#graph-key").hidden = !nodes.length; $(".graph-tools").hidden = !nodes.length;
-      $("#open-graph").addEventListener("click", () => setPane("graph"));
-      $("#open-sources").addEventListener("click", () => setPane("sources"));
-      $("#open-session").addEventListener("click", () => setPane("session"));
-      $("#menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
-      $("#zoom-in").addEventListener("click", () => { scale = Math.min(4, scale * 1.2); drawGraph(); });
-      $("#zoom-out").addEventListener("click", () => { scale = Math.max(.05, scale / 1.2); drawGraph(); });
-      $("#reset-view").addEventListener("click", resetView);
-      window.addEventListener("resize", () => { if (resizeCanvas()) resetView(); });
-      if (page.kind === "workspace" || page.kind === "project") setPane("overview");
-      else if (page.kind === "artifact") { const artifact = artifacts.find(item => item.id === page.artifactId); if (artifact) renderArtifact(artifact); setPane("note"); }
-      else setPane("graph");
+      function renderOverview(route) {
+        const host = node("article", { class: "document" });
+        if (route.kind === "workspace") {
+          host.append(node("h1", { text: data.workspace.name }), node("p", { class: "lede", text: "Projects and topics in this learning workspace." }));
+          const list = node("ul", { class: "cards" });
+          data.workspace.projects.forEach(project => list.append(node("li", {}, node("a", { class: "card", href: routeHref("project", project.id) }, node("strong", { text: project.name }), node("small", { text: `${project.topics.length} topic${project.topics.length === 1 ? "" : "s"}` })))));
+          host.append(data.workspace.projects.length ? list : node("div", { class: "empty", text: "No projects yet. Create one in chat." }));
+        } else {
+          const project = projectFor(route.projectId);
+          host.append(node("h1", { text: project.name }), node("p", { class: "lede", text: "Topics in this project." }));
+          const list = node("ul", { class: "cards" });
+          project.topics.forEach(item => list.append(node("li", {}, node("a", { class: "card", href: routeHref("topic", project.id, item.id, "graph") }, node("strong", { text: item.name }), node("small", { text: "Open concept graph" })))));
+          host.append(project.topics.length ? list : node("div", { class: "empty", text: "No topics yet. Add one in chat." }));
+        }
+        main.append(host);
+      }
+
+      function graphCallout(topic, state) {
+        if (state.proposal && state.session.stale) return node("div", { class: "callout danger", role: "alert", text: `This preview is stale and must not be approved. ${state.session.staleReasons.join(" ")}` });
+        if (state.proposal) return node("div", { class: "callout", text: "Unapproved graph preview. Approve or correct it in chat." });
+        if (topic.reconciliationRequired) return node("div", { class: topic.reconciliationReasons.length ? "callout danger" : "callout", role: "status", text: topic.reconciliationReasons.length ? `The graph is stale. ${topic.reconciliationReasons.join(" ")} Reconcile it in chat before graph-based learning.` : "The concept graph needs review in chat before graph-based learning." });
+        return null;
+      }
+
+      function layoutGraph(graph) {
+        const byId = new Map(graph.nodes.map(item => [item.id, item]));
+        const indegree = new Map(graph.nodes.map(item => [item.id, 0]));
+        const children = new Map(graph.nodes.map(item => [item.id, []]));
+        graph.edges.forEach(edge => { indegree.set(edge.to, indegree.get(edge.to) + 1); children.get(edge.from).push(edge.to); });
+        const depth = new Map(graph.nodes.map(item => [item.id, 0]));
+        const ready = graph.nodes.filter(item => indegree.get(item.id) === 0).sort(compareConcepts).map(item => item.id);
+        for (let cursor = 0; cursor < ready.length; cursor += 1) {
+          const id = ready[cursor];
+          children.get(id).sort((a, b) => compareConcepts(byId.get(a), byId.get(b))).forEach(child => {
+            depth.set(child, Math.max(depth.get(child), depth.get(id) + 1));
+            indegree.set(child, indegree.get(child) - 1);
+            if (indegree.get(child) === 0) ready.push(child);
+          });
+        }
+        const layers = [];
+        graph.nodes.forEach(item => (layers[depth.get(item.id)] ||= []).push(item));
+        layers.forEach(layer => layer.sort(compareConcepts));
+        const box = { width: 190, height: 68, xGap: 72, yGap: 26, margin: 34 };
+        const rows = Math.max(1, ...layers.map(layer => layer.length));
+        const width = box.margin * 2 + layers.length * box.width + Math.max(0, layers.length - 1) * box.xGap;
+        const height = box.margin * 2 + rows * box.height + Math.max(0, rows - 1) * box.yGap;
+        const points = new Map();
+        layers.forEach((layer, column) => {
+          const layerHeight = layer.length * box.height + Math.max(0, layer.length - 1) * box.yGap;
+          const startY = (height - layerHeight) / 2;
+          layer.forEach((item, row) => points.set(item.id, { x: box.margin + column * (box.width + box.xGap), y: startY + row * (box.height + box.yGap), item }));
+        });
+        return { width, height, points, box };
+      }
+
+      function renderGraph(topic) {
+        const state = graphState(topic);
+        const host = node("article", { class: "document wide" }, node("h1", { text: topic.title }), node("p", { class: "meta", text: `${topic.eyebrow} · updated ${topic.updatedAt}` }), node("p", { class: "lede", text: topic.summary }));
+        const callout = graphCallout(topic, state); if (callout) host.append(callout);
+        if (!state.graph.nodes.length) {
+          host.append(node("div", { class: "empty", text: topic.reconciliationRequired ? "The concept graph is waiting for review in chat." : "No concepts yet." })); main.append(host); return;
+        }
+        const layout = layoutGraph(state.graph);
+        const svgNs = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgNs, "svg");
+        svg.setAttribute("class", "graph"); svg.setAttribute("viewBox", `0 0 ${layout.width} ${layout.height}`); svg.setAttribute("width", layout.width); svg.setAttribute("height", layout.height); svg.setAttribute("role", "group"); svg.setAttribute("aria-label", `Prerequisite graph with ${state.graph.nodes.length} concepts. Arrows point from prerequisite to dependent.`);
+        const defs = document.createElementNS(svgNs, "defs");
+        const marker = document.createElementNS(svgNs, "marker"); marker.setAttribute("id", "arrow"); marker.setAttribute("viewBox", "0 0 10 10"); marker.setAttribute("refX", "9"); marker.setAttribute("refY", "5"); marker.setAttribute("markerWidth", "6"); marker.setAttribute("markerHeight", "6"); marker.setAttribute("orient", "auto-start-reverse");
+        const arrow = document.createElementNS(svgNs, "path"); arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z"); arrow.setAttribute("fill", "#858585"); marker.append(arrow); defs.append(marker); svg.append(defs);
+        state.graph.edges.forEach(edge => {
+          const from = layout.points.get(edge.from), to = layout.points.get(edge.to);
+          const pathNode = document.createElementNS(svgNs, "path");
+          const x1 = from.x + layout.box.width, y1 = from.y + layout.box.height / 2, x2 = to.x, y2 = to.y + layout.box.height / 2, bend = Math.max(30, (x2 - x1) / 2);
+          pathNode.setAttribute("class", "edge"); pathNode.setAttribute("d", `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`); pathNode.setAttribute("marker-end", "url(#arrow)");
+          const evidence = edge.evidence.map(item => `${sourceFor(topic, item.sourceId)?.title || item.sourceId} — ${item.locator}`).join("; ");
+          const title = document.createElementNS(svgNs, "title"); title.textContent = `${from.item.label} is a prerequisite for ${to.item.label}. Evidence: ${evidence}.`; pathNode.append(title); svg.append(pathNode);
+        });
+        const artifacts = new Map(topic.artifacts.filter(item => item.conceptId).map(item => [item.conceptId, item]));
+        state.graph.nodes.forEach(concept => {
+          const point = layout.points.get(concept.id), value = state.state(concept.id);
+          const artifact = artifacts.get(concept.id);
+          const link = document.createElementNS(svgNs, "a"); link.setAttribute("href", artifact ? routeHref("artifact", topic.projectId, topic.id, artifact.id) : routeHref("concept", topic.projectId, topic.id, concept.id)); link.setAttribute("class", `graph-node ${value}`);
+          const title = document.createElementNS(svgNs, "title"); title.textContent = `${concept.label}. ${value === "known" ? "Known" : value === "ready" ? "Ready next" : "Later"}. ${concept.description}`;
+          const rect = document.createElementNS(svgNs, "rect"); rect.setAttribute("x", point.x); rect.setAttribute("y", point.y); rect.setAttribute("width", layout.box.width); rect.setAttribute("height", layout.box.height);
+          const label = concept.label.length > 27 ? `${concept.label.slice(0, 26)}…` : concept.label;
+          const textNode = document.createElementNS(svgNs, "text"); textNode.setAttribute("x", point.x + 13); textNode.setAttribute("y", point.y + 31); textNode.textContent = label;
+          const stateNode = document.createElementNS(svgNs, "text"); stateNode.setAttribute("class", "graph-state"); stateNode.setAttribute("x", point.x + 13); stateNode.setAttribute("y", point.y + 51); stateNode.textContent = value === "known" ? "Known" : value === "ready" ? "Ready next" : "Later";
+          link.append(title, rect, textNode, stateNode); svg.append(link);
+        });
+        host.append(node("div", { class: "graph-frame" }, svg), node("div", { class: "graph-legend" }, node("span", { class: "legend-item" }, node("span", { class: "state-dot known", "aria-hidden": "true" }), "Known"), node("span", { class: "legend-item" }, node("span", { class: "state-dot ready", "aria-hidden": "true" }), "Ready next"), node("span", { class: "legend-item" }, node("span", { class: "state-dot later", "aria-hidden": "true" }), "Later"), node("span", { text: "Arrows: prerequisite → dependent" })));
+        main.append(host);
+      }
+
+      function renderSources(topic) {
+        const host = node("article", { class: "document" }, node("h1", { text: "Sources" }), node("p", { class: "lede", text: `Canonical knowledge bank for ${topic.title}. Source content stays in its Markdown file and is not duplicated into this page.` }));
+        const list = node("ul", { class: "cards" });
+        topic.sources.forEach(source => {
+          const href = safeLocal(source.href);
+          const detail = [source.type, source.author, source.locator, `added ${source.addedAt}`].filter(Boolean).join(" · ");
+          const content = node("div", { class: "card source-card" }, node("strong", { text: source.title }), node("small", { text: detail }));
+          if (source.integrityProblem) content.append(node("p", { class: "source-problem", role: "alert", text: source.integrityProblem }));
+          if (href) content.append(node("p", {}, node("a", { href, target: "_blank", rel: "noopener", text: "Open canonical Markdown" })));
+          list.append(node("li", {}, content));
+        });
+        host.append(topic.sources.length ? list : node("div", { class: "empty", text: "No canonical sources yet. Add one in chat." })); main.append(host);
+      }
+
+      function renderConcept(topic, id) {
+        const state = graphState(topic);
+        const graph = state.graph;
+        const byId = new Map(graph.nodes.map(item => [item.id, item]));
+        const concept = byId.get(id);
+        const value = state.state(id);
+        const host = node("article", { class: "document" }, node("h1", { text: concept.label }), node("p", { class: "lede", text: concept.description }), node("div", { class: "concept-meta" }, node("span", { class: "badge", text: value === "known" ? "Known" : value === "ready" ? "Ready next" : "Later" })));
+        const artifact = topic.artifacts.find(item => item.conceptId === id);
+        if (artifact) host.append(node("p", {}, node("a", { href: routeHref("artifact", topic.projectId, topic.id, artifact.id), text: artifact.stale ? "Open stale learning material" : "Open learning material" })));
+        else host.append(node("div", { class: "empty", text: "No learning material yet. Ask to learn this concept in chat." }));
+        const prerequisites = graph.edges.filter(edge => edge.to === id).map(edge => ({ edge, concept: byId.get(edge.from) }));
+        const dependents = graph.edges.filter(edge => edge.from === id).map(edge => ({ edge, concept: byId.get(edge.to) }));
+        [["Prerequisites", prerequisites], ["Unlocks", dependents]].forEach(([title, items]) => {
+          if (!items.length) return;
+          const list = node("ul", { class: "relation-list" });
+          items.forEach(item => {
+            const evidence = node("ul", { class: "relation-list" });
+            item.edge.evidence.forEach(reference => {
+              const source = sourceFor(topic, reference.sourceId), href = source && safeLocal(source.href);
+              evidence.append(node("li", {}, "Evidence: ", href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || reference.sourceId }), ` — ${reference.locator}`));
+            });
+            list.append(node("li", {}, node("a", { href: routeHref("concept", topic.projectId, topic.id, item.concept.id), text: item.concept.label }), evidence));
+          });
+          host.append(node("h2", { text: title }), list);
+        });
+        const evidence = node("ul", { class: "relation-list" });
+        concept.evidence.forEach(reference => { const source = sourceFor(topic, reference.sourceId), href = source && safeLocal(source.href); evidence.append(node("li", {}, href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || reference.sourceId }), ` — ${reference.locator}`)); });
+        host.append(node("h2", { text: "Grounding" }), evidence); main.append(host);
+      }
+
+      function renderArtifact(topic, artifact) {
+        const host = node("article", { class: "document" }, node("h1", { text: artifact.title }), node("p", { class: "meta", text: `${artifact.kind === "concept" ? "Concept material" : "General answer"} · updated ${artifact.updatedAt}` }), node("p", { class: "lede", text: artifact.summary }));
+        if (artifact.conceptId) host.append(node("p", {}, node("a", { href: routeHref("concept", topic.projectId, topic.id, artifact.conceptId), text: "View concept details and grounding" })));
+        if (artifact.stale) host.append(node("div", { class: "callout danger", role: "alert", text: `This material is stale and must not be treated as current. ${artifact.staleReasons.join(" ")}` }));
+        host.append(...renderSections(artifact, topic)); main.append(host);
+      }
+
+      function renderSession(topic) {
+        const session = activeSession(topic);
+        const host = node("article", { class: "document" }, node("h1", { text: session?.title || (session?.kind === "graph-proposal" ? "Graph proposal" : "Answer preview") }));
+        if (!session) { host.append(node("div", { class: "empty", text: "No active preview." })); main.append(host); return; }
+        if (session.context) host.append(node("p", { class: "lede", text: session.context }));
+        if (session.stale) host.append(node("div", { class: "callout danger", role: "alert", text: `Do not approve or save this preview. ${session.staleReasons.join(" ")} Regenerate it from current state in chat.` }));
+        host.append(...renderSections(session, topic), node("div", { class: session.stale ? "callout danger" : "callout", text: session.stale ? "This preview is non-approvable." : "Continue in chat to approve, correct, save, or discard this preview." })); main.append(host);
+      }
+
+      let focusContent = false;
+      function render() {
+        const route = parseRoute();
+        const topic = route.topicId && topicFor(route.projectId, route.topicId);
+        const artifact = topic && route.artifactId ? topic.artifacts.find(item => item.id === route.artifactId) : null;
+        main.replaceChildren();
+        main.scrollTop = 0;
+        renderSidebar(route, topic);
+        renderBreadcrumb(route, topic, artifact);
+        setStatus(topic, route, artifact);
+        document.title = `${artifact?.title || (route.kind === "concept" ? graphState(topic).graph.nodes.find(item => item.id === route.conceptId).label : topic?.title || projectFor(route.projectId)?.name || data.workspace.name)} — LEARN`;
+        if (route.kind === "workspace" || route.kind === "project") renderOverview(route);
+        else if (route.kind === "artifact") renderArtifact(topic, artifact);
+        else if (route.kind === "concept") renderConcept(topic, route.conceptId);
+        else if (route.view === "sources") renderSources(topic);
+        else if (route.view === "session") renderSession(topic);
+        else renderGraph(topic);
+        closeSidebar();
+        if (focusContent) main.focus({ preventScroll: true });
+        focusContent = true;
+      }
+
+      $("#menu").addEventListener("click", () => {
+        if (sidebar.classList.toggle("open")) { syncSidebar(); sidebar.querySelector("a").focus(); }
+        else closeSidebar(true);
+      });
+      $("#skip").addEventListener("click", () => main.focus());
+      $("#scrim").addEventListener("click", () => closeSidebar(true));
+      window.addEventListener("keydown", event => {
+        if (!sidebar.classList.contains("open")) return;
+        if (event.key === "Escape") { closeSidebar(true); return; }
+        if (event.key !== "Tab") return;
+        const focusable = [...sidebar.querySelectorAll("a[href], summary, button:not([disabled])")].filter(item => item.offsetParent !== null);
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      });
+      window.addEventListener("hashchange", render);
+      if (mobile.addEventListener) mobile.addEventListener("change", syncSidebar); else mobile.addListener(syncSidebar);
+      if (!location.hash) {
+        const route = defaultRoute();
+        history.replaceState(null, "", route.kind === "workspace" ? routeHref("workspace") : routeHref("topic", route.projectId, route.topicId, route.view));
+      }
+      syncSidebar(); render();
     })();
   </script>
 </body>
