@@ -111,14 +111,14 @@ Efficiency must not omit relevant evidence, weaken citations, lower assessment q
 
 ## Static HTML contract
 
-Rendering copies the fixed template and injects one escaped JSON payload into `html/index.html`. It does not embed full Source contents. Source entries link to the original `.txt` or `.pdf` files.
+Rendering copies the fixed template and bundled KaTeX assets, then injects one escaped JSON payload into `html/index.html`. It does not embed full Source contents. Source entries link to the original `.txt` or `.pdf` files.
 
 The graph API ends at JSON. Agents generate validated concept graph and known-set JSON; they never generate graph UI. The renderer alone maps that data into the bundled LEARN layered DAG in the fixed HTML template.
 
 The template must:
 
 - work under `file://` without a daemon or web server;
-- render structured Markdown after escaping input and never execute model-authored HTML;
+- render structured Markdown and `\\(...\\)`/`\\[...\\]` LaTeX after escaping input and never execute model-authored HTML;
 - use the bundled deterministic left-to-right layered layout for prerequisite DAGs;
 - expose concept descriptions, prerequisite relationships, understanding state, and citations as semantic text as well as graphics;
 - make source-grounded, conflicting, and stale material visually distinct;

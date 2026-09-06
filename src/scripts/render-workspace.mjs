@@ -2,13 +2,14 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const templatePath = path.resolve(here, "../ui/index.html");
+const katexPath = path.resolve(here, "../ui/katex");
 const idPattern = /^[a-z0-9][a-z0-9_-]*$/;
 const hashPattern = /^[a-f0-9]{64}$/;
 
@@ -506,6 +507,7 @@ async function replaceDirectory(outputRoot, html) {
   let movedPrevious = false;
   try {
     await writeFile(path.join(temporary, "index.html"), html);
+    await cp(katexPath, path.join(temporary, "katex"), { recursive: true });
     try { await rename(outputRoot, previous); movedPrevious = true; }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     await rename(temporary, outputRoot);
@@ -591,7 +593,7 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg, quiet = f
   const html = inject(template, { workspace: { name: workspace.name, current, projects }, topics: loadedTopics, ...(session ? { session } : {}) });
   await replaceDirectory(outputRoot, html);
   if (!quiet) {
-    console.log(`Rendered one self-contained page to ${path.join(outputRoot, "index.html")}`);
+    console.log(`Rendered offline workspace to ${path.join(outputRoot, "index.html")}`);
     if (session) console.log("Ephemeral session UI rendered outside the workspace; remove its temporary directory when the preview ends.");
   }
   return { outputRoot, html };
@@ -606,8 +608,10 @@ async function check() {
   assert.doesNotMatch(template, /requestAnimationFrame/);
   const inlinePatternSource = template.match(/const inlinePattern = (\/[^\n]+\/gu);/)?.[1];
   assert.ok(inlinePatternSource);
-  assert.doesNotMatch("foo_bar_baz", new Function(`return ${inlinePatternSource}`)());
-  assert.match("Use _emphasis_.", new Function(`return ${inlinePatternSource}`)());
+  const inlinePattern = new Function(`return ${inlinePatternSource}`)();
+  assert.doesNotMatch("foo_bar_baz", inlinePattern);
+  assert.match("Use _emphasis_.", inlinePattern);
+  assert.equal("Value \\(S_T\\).".match(inlinePattern)?.[0], "\\(S_T\\)");
   assert(pathsOverlap("/workspace/html", "/workspace/html/topic"));
   assert(!pathsOverlap("/workspace/html", "/workspace/projects/topic"));
   assert.equal(inject("x__LEARN_DATA__y", { value: "</script>\u2028" }), 'x{"value":"\\u003c/script>\\u2028"}y');
@@ -646,8 +650,8 @@ async function check() {
   assert.match(inspectSource(Buffer.from("not a pdf"), "pdf", "PDF source").problem, /not a PDF/);
   assert.throws(() => validateCitation({ id: "web", kind: "web" }, "citation"), /kind must be source/);
   const executableScripts = [...template.matchAll(/<script(?![^>]*type=["']application\/json["'])[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(executableScripts.length, 1);
-  new Function(executableScripts[0][1]);
+  assert.equal(executableScripts.length, 2);
+  new Function(executableScripts.find((match) => match[1].trim())[1]);
   const root = await mkdtemp(path.join(tmpdir(), "learn-render-check-"));
   try {
     const workspaceRoot = path.join(root, "workspace");
@@ -676,7 +680,7 @@ async function check() {
     await writeFile(pdfFile, pdfBytes);
     await writeFile(path.join(topicRoot, "artifacts", "basics.json"), JSON.stringify(artifact));
     const { outputRoot, html } = await render(workspaceRoot, undefined, undefined, true);
-    assert.deepEqual(await readdir(outputRoot), ["index.html"]);
+    assert.deepEqual((await readdir(outputRoot)).sort(), ["index.html", "katex"]);
     assert(!html.includes(sourceBody.trim()));
     assert(!html.includes("<script>alert(1)</script>"));
     const match = html.match(/<script type="application\/json" id="learn-data">([\s\S]*?)<\/script>/);
