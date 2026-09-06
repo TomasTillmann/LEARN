@@ -7,7 +7,7 @@ LEARN is a source-grounded Codex skill that turns learner-provided text and PDFs
 The session manager owns learner chat, approvals, workspace state, and rendering. Fresh specialists receive no chat history and return strict JSON only:
 
 1. PDF text is extracted locally with PyMuPDF4LLM. Large PDFs are structurally surveyed, divided into exhaustive page chunks, and inventoried by the required number of fresh agents.
-2. Every validated chunk inventory is checkpointed outside conversation context. A fresh synthesis agent merges only true duplicates and remaps existing evidence-backed edges into the final graph.
+2. Every validated chunk inventory is checkpointed outside conversation context. A fresh synthesis agent applies the same concept boundary across chunks, consolidates candidates that form one learning objective, and derives the final prerequisite edges only from inventory evidence.
 3. Each graph node persists exact `sourceScopes`. A fresh lesson agent reads only those regions and preserves their definitions, reasoning, examples, qualifications, and useful wording.
 4. The deterministic renderer validates workspace JSON and builds the read-only layered DAG and learning pages as one local HTML file.
 
@@ -19,6 +19,7 @@ Original sources and validated JSON are durable. Rendered HTML, graph proposals,
 .
 ├── SKILL.md                         Skill entry point and routing
 ├── PRODUCT_SPEC.md                  Product contract and release gates
+├── evals/concept-granularity.md     Minimal graph-boundary regression
 ├── publish                          Exact global-skill publisher
 └── src
     ├── prompts

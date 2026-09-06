@@ -45,6 +45,10 @@ The browser presents navigation, the bundled layered DAG, graph state, lessons, 
 - Stale content remains viewable when clearly labelled but cannot ground new work or be approved.
 - Generated summaries and answers are never Sources.
 
+## Concept granularity
+
+A graph node is a coherent, reusable unit of understanding with one meaningful learning objective that can support a focused lesson and an assessment through explanation, reasoning, or application. Select the smallest useful learning unit, not every distinguishable source item. Definitions, notation, formulas, examples, exercises, and procedural steps stay inside the concept they support unless the Source develops one into an independently useful learning objective. Merge candidates that would naturally be taught and assessed together; split objectives that have distinct prerequisites or applications. Source headings and chunk boundaries never determine node boundaries. The operational tests and examples live in `src/prompts/create_concept_graph.md`.
+
 ## Learning state
 
 The concept graph is a directed acyclic graph. Edges point from prerequisite to dependent. The known set is prerequisite-closed:
@@ -97,7 +101,7 @@ Stage source updates and calculate graph, staleness, and known-set consequences 
 - Inspect compact manifests before opening Sources.
 - Never use rendered HTML or old artifacts as factual context.
 - Read only a concept's persisted PDF-page or text-line scopes for lessons and reviews; do not audit the whole Source again.
-- Cover every Source when creating a graph. For PDFs over 80 pages, inspect the structural overview, assign every page exactly once in chunks of at most 35 pages, run at least `ceil(pageCount / 35)` fresh inventory specialists, then have one fresh specialist merge only true duplicates without inventing nodes or edges.
+- Cover every Source when creating a graph. For PDFs over 80 pages, inspect the structural overview, assign every page exactly once in chunks of at most 35 pages, run at least `ceil(pageCount / 35)` fresh inventory specialists, then have one fresh specialist apply the concept boundary across all inventories and derive cross-chunk prerequisites only from inventory evidence.
 - Checkpoint every validated chunk inventory and its hash in OS-temporary storage immediately; never rely on conversation context. Reconciliation starts only after a manifest proves exact complete coverage and all checkpoint/source hashes still match.
 - Start specialists without inherited chat history and provide a self-contained, scoped handoff.
 - Reuse a quiz specialist only for that active quiz.
@@ -131,6 +135,6 @@ LEARN deliberately has no database, vector store, embeddings, localhost service,
 1. The skill validator passes and discovery does not trigger on unrelated generic questions.
 2. The renderer self-check covers direct text and PDF Sources, exact-byte hashes, missing or changed files, path escapes, stale state, and one-file output.
 3. The template JavaScript is valid and generated output contains no server dependency or model-authored HTML.
-4. An isolated forward test covers text and a readable PDF, graph approval, a lesson, an answer, a quiz proposal, source change, staleness, and reconciliation.
+4. Isolated forward tests cover text and a readable PDF, graph approval, a lesson, an answer, a quiz proposal, source change, staleness, and reconciliation. The concept-granularity regression verifies that supporting notation and exercises stay within their concept while independently useful objectives remain separate.
 5. Direct browser opening is smoke-tested on the supported desktop browser.
 6. The repository and installed skill are byte-for-byte synchronized or linked to one source of truth.
