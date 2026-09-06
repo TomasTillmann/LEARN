@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+source_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+codex_dir=${CODEX_HOME:-${HOME:?HOME is not set}/.codex}
+
+case "$codex_dir" in
+  /*) ;;
+  *) echo "Refusing relative CODEX_HOME: $codex_dir" >&2; exit 1 ;;
+esac
+case "$codex_dir" in
+  /) echo "Refusing unsafe CODEX_HOME: /" >&2; exit 1 ;;
+esac
+
+destination=$codex_dir/skills/learn
+mkdir -p -- "$destination"
+destination=$(CDPATH= cd -- "$destination" && pwd -P)
+
+case "$destination" in
+  /|"$source_dir") echo "Refusing unsafe destination: $destination" >&2; exit 1 ;;
+  */skills/learn) ;;
+  *) echo "Refusing unexpected destination: $destination" >&2; exit 1 ;;
+esac
+case "$destination/" in "$source_dir/"*) echo "Destination is inside the source tree" >&2; exit 1 ;; esac
+case "$source_dir/" in "$destination/"*) echo "Source is inside the destination tree" >&2; exit 1 ;; esac
+
+command -v rsync >/dev/null 2>&1 || { echo "rsync is required" >&2; exit 1; }
+rsync -a --delete-after --exclude=.git -- "$source_dir/" "$destination/"
+diff -qr -x .git "$source_dir" "$destination"
+printf 'Published LEARN to %s\n' "$destination"
