@@ -12,9 +12,10 @@ Accept only direct text or PDF sources. Read every PDF with the PDF skill. For P
 
 For every topic or knowledge graph, use the bundled LEARN graph pipeline and no other visualization path:
 
-1. Generate only the strict concept-graph JSON defined in [`src/prompts/create_concept_graph.md`](src/prompts/create_concept_graph.md).
-2. Validate and persist that JSON—including every concept's exact PDF-page or text-line `sourceScopes`—as `concept_graph.json` plus `known_set.json`, or place it in the documented `session.json` proposal envelope.
-3. Run the existing renderer. It automatically injects the JSON into the fixed LEARN HTML template and displays the built-in layered DAG.
+1. Generate only the strict concept-graph response defined in [`src/prompts/create_concept_graph.md`](src/prompts/create_concept_graph.md).
+2. Require `mode: "complete"` and `status: "ready"`, then immediately persist `response.graph` as `concept_graph.json` and `{"conceptIds": response.knownConcepts}` as `known_set.json`; do not ask the learner to approve the graph.
+3. Select a prerequisite-ready unknown concept and prepare it as the learner's first suggested topic; do not create learning material until the learner asks to learn it.
+4. Run the existing renderer, then report the commit and suggestion even if rendering fails. The renderer automatically injects the JSON into the fixed LEARN HTML template and displays the built-in layered DAG.
 
 Never invoke another visualization or image tool for the graph. Never author, patch, or replace HTML, SVG, canvas, JavaScript, CSS, graph layout, controls, or any other UI. If the bundled renderer fails, report the failure; do not substitute a custom graph.
 

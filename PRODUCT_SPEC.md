@@ -17,7 +17,7 @@ Universal invariants live in `src/prompts/shared.md`; exact schemas and procedur
 
 ## Surfaces and authority
 
-Each chat owns its project context, commands, approvals, learner answers, previews, and complete quiz exchanges. A quiz asks one question at a time and writes state only after the learner approves its final proposal. Chats share only durable workspace files; proposal hashes prevent stale approvals across concurrent chats.
+Each chat owns its project context, commands, quiz approvals, learner answers, previews, and complete quiz exchanges. A quiz asks one question at a time and writes state only after the learner approves its final proposal. Chats share only durable workspace files; input hashes prevent stale specialist results and quiz approvals across concurrent chats.
 
 The workspace manifest, topic manifests, original Sources, concept graph, known set, and structured artifact JSON are authoritative. Rendered HTML, temporary previews, quiz exchanges, and rejected proposals are disposable and never become factual input.
 
@@ -64,20 +64,20 @@ Never persist a score, confidence, percentage, partial mastery, frontier, or rec
 
 ## Mutations and concurrency
 
-- A direct, exact learner command authorizes that non-destructive mutation. An agent proposal needs explicit approval.
-- Destructive or cascading operations name their targets and consequences first unless the learner already gave an unambiguous deletion command.
-- Source approval does not approve a graph change. Graph approval does not create lessons.
-- Proposals carry source and state hashes. Reject and rebuild a proposal when its base changes.
+- A direct, exact learner command authorizes that non-destructive mutation. A validated graph from accepted sources commits automatically; other agent proposals need explicit approval.
+- Project/topic deletion always names its targets and cascade first. Exact source or disposable-artifact deletion may proceed without another confirmation once its target is unique.
+- A source mutation triggers separate automatic graph reconciliation. A graph commit does not create lessons.
+- Generated results carry source and state hashes where applicable. Reject and rebuild a stale result.
 - Write each file through a sibling temporary file, validate it, then atomically rename it.
-- Before changing a source, set `graphReconciliationRequired`. Clear it only after graph and known-set validation succeeds.
-- Re-read current state immediately before committing an approved proposal.
+- Before changing a source or semantic graph, set `graphReconciliationRequired`. Clear it only after graph and known-set validation succeeds.
+- Re-read current state immediately before committing a generated graph or approved quiz proposal.
 - Generated output must never overlap or contain a topic root.
 
 ## Core flows
 
 ### Create a workspace or topic
 
-An empty workspace is valid and has an empty `projects` array. Creating a topic builds and validates its skeleton and, when supplied, its first Source before registering it. Once a Source exists, LEARN proposes a complete grounded graph. Rejecting or correcting it leaves graph-dependent learning paused. Graph approval leaves artifacts empty. Each chat owns one project context; topic navigation is never persisted in the shared workspace, so multiple chats can work concurrently.
+An empty workspace is valid and has an empty `projects` array. Creating a topic builds and validates its skeleton and, when supplied, its first Source before registering it. Once a Source exists, LEARN generates, validates, and immediately commits a complete grounded graph without approval, then suggests a prerequisite-ready unknown concept and creates no learning artifact. Each chat owns one project context; topic navigation is never persisted in the shared workspace, so multiple chats can work concurrently.
 
 ### Learn or review
 
@@ -93,7 +93,7 @@ A boundary quiz chooses questions that most reduce uncertainty while respecting 
 
 ### Update or delete
 
-Stage source updates and calculate graph, staleness, and known-set consequences before asking for any additional approval. Deleting a topic or project never changes another shared selection because none is stored. Prefer recoverable deletion when available.
+Stage source updates and calculate graph, staleness, and known-set consequences before committing the requested source mutation and its automatic graph reconciliation. Deleting a topic or project never changes another shared selection because none is stored. Prefer recoverable deletion when available.
 
 ## Token and latency discipline
 
@@ -135,6 +135,6 @@ LEARN deliberately has no database, vector store, embeddings, localhost service,
 1. The skill validator passes and discovery does not trigger on unrelated generic questions.
 2. The renderer self-check covers direct text and PDF Sources, exact-byte hashes, missing or changed files, path escapes, stale state, and one-file output.
 3. The template JavaScript is valid and generated output contains no server dependency or model-authored HTML.
-4. Isolated forward tests cover text and a readable PDF, graph approval, a lesson, an answer, a quiz proposal, source change, staleness, and reconciliation. The concept-granularity regression verifies that supporting notation and exercises stay within their concept while independently useful objectives remain separate.
+4. Isolated forward tests cover text and a readable PDF, graph auto-commit plus first-concept suggestion, a lesson, an answer, a quiz proposal, source change, staleness, and reconciliation. The graph-auto-commit regression verifies validate → commit → suggest with no graph approval or artifact; the concept-granularity regression verifies that supporting notation and exercises stay within their concept while independently useful objectives remain separate.
 5. Direct browser opening is smoke-tested on the supported desktop browser.
 6. The repository and installed skill are byte-for-byte synchronized or linked to one source of truth.

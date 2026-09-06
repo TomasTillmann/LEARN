@@ -36,8 +36,8 @@ Source structure is evidence, not the boundary: one section may contain several 
 - In `chunk` mode, apply the concept boundary while exhaustively inspecting the assigned PDF pages or text lines. Return only supported concept candidates; include supporting definitions, notation, examples, and exercises in the relevant candidate's scopes rather than emitting fragment nodes.
 - In synthesis `complete` mode, trust the supplied chunk inventories and do not reread the original files. Apply the concept boundary globally: combine candidates that form one learning objective, retain their accumulated scopes/evidence, and remap their existing edges. Do not preserve an over-granular candidate merely because a chunk emitted it. Every final node must be grounded in one or more input candidates. A final edge must either descend from an input edge or be a cross-chunk prerequisite supported by evidence already present in the supplied inventories. Never invent unsupported concepts or relationships, or drop source material that substantively teaches a retained concept.
 - In non-chunked `complete` mode, read the supplied source scopes directly and apply the same concept boundary. Return the complete graph, not a patch.
-- In complete mode, explicitly empty sources yield a valid proposal with empty source hashes, nodes, edges, known concepts, sections, and citations—not `insufficient`.
-- In complete reconciliation, preserve unaffected concepts and edges. New concepts start unknown except new prerequisites required by an understood concept. Removed concepts leave the known set; materially changed concepts and their dependent closure become unknown. Return a complete prerequisite-closed proposed known set.
+- In complete mode, explicitly empty sources yield a valid ready response with empty source hashes, nodes, edges, known concepts, sections, and citations—not `insufficient`.
+- In complete reconciliation, preserve unaffected concepts and edges. New concepts start unknown except new prerequisites required by an understood concept. Removed concepts leave the known set; materially changed concepts and their dependent closure become unknown. Return the complete resulting prerequisite-closed known set.
 - `sourceHashes` contains exactly every source used by node scopes or node/edge evidence, mapped to the supplied SHA-256 of that source file's exact bytes.
 
 ## Boundary examples
@@ -54,7 +54,7 @@ Return raw JSON only, with no fence, commentary, or unknown fields:
 {
   "type": "concept_graph_response",
   "mode": "complete",
-  "status": "proposal",
+  "status": "ready",
   "graph": {
     "sourceHashes": {"source-id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
     "nodes": [
@@ -84,8 +84,8 @@ Return raw JSON only, with no fence, commentary, or unknown fields:
   "knownConcepts": ["prerequisite-id"],
   "sections": [
     {
-      "id": "proposal-summary",
-      "title": "Proposal summary",
+      "id": "graph-summary",
+      "title": "Graph summary",
       "kind": "source",
       "markdown": "Concise explanation; no raw HTML.",
       "citationIds": ["citation-id"]
@@ -103,4 +103,4 @@ Return raw JSON only, with no fence, commentary, or unknown fields:
 }
 ```
 
-The repeated `a` hash is a shape-only placeholder; substitute the supplied value. `mode` equals the requested `chunk` or `complete`. Each `sourceScopes` entry names one source, uses `unit: "page"` for PDFs or `unit: "line"` for text, and contains sorted, non-overlapping inclusive `[start,end]` integer ranges; merge adjacent ranges. In complete mode, `knownConcepts` is the complete proposed ID list; a non-empty proposal includes grounded sections/citations. In chunk mode, the graph is explicitly partial, `knownConcepts` is null, and sections/citations are empty. On insufficiency, set `status: "insufficient"`, `graph: null`, `knownConcepts: null`, empty sections/citations, and a concise `reason`; source size alone is not insufficient. Every returned section has a non-empty, duplicate-free `citationIds` list; every citation ID is unique and used. A conflict section cites at least two attributed positions. Source citations may add `note`. Markdown permits paragraphs, H3/H4, lists, blockquotes, fenced code, inline code/emphasis/strong, `\\(...\\)` inline LaTeX, single-line `\\[...\\]` display LaTeX, and HTTPS links—never dollar-sign math, raw HTML, or tables.
+The repeated `a` hash is a shape-only placeholder; substitute the supplied value. `mode` equals the requested `chunk` or `complete`. Each `sourceScopes` entry names one source, uses `unit: "page"` for PDFs or `unit: "line"` for text, and contains sorted, non-overlapping inclusive `[start,end]` integer ranges; merge adjacent ranges. In complete mode, `knownConcepts` is the complete ID list to persist; a non-empty ready response includes grounded sections/citations. In chunk mode, the graph is explicitly partial, `knownConcepts` is null, and sections/citations are empty. On insufficiency, set `status: "insufficient"`, `graph: null`, `knownConcepts: null`, empty sections/citations, and a concise `reason`; source size alone is not insufficient. Every returned section has a non-empty, duplicate-free `citationIds` list; every citation ID is unique and used. A conflict section cites at least two attributed positions. Source citations may add `note`. Markdown permits paragraphs, H3/H4, lists, blockquotes, fenced code, inline code/emphasis/strong, `\\(...\\)` inline LaTeX, single-line `\\[...\\]` display LaTeX, and HTTPS links—never dollar-sign math, raw HTML, or tables.
