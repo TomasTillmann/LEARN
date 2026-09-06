@@ -62,7 +62,37 @@ A populated manifest uses:
 }
 ```
 
-Source `type` is `text` or `pdf`; its path is exactly `sources/<source-id>.txt` or `sources/<source-id>.pdf`. Omit unavailable optional source fields rather than writing placeholders. Keep topic eyebrow/summary navigational, without uncited factual claims. Artifact metadata must equal its artifact file. A non-null `conceptId` requires `kind: "concept"`, must exist in the graph, and is unique in the artifact list. General saved answers use `kind: "answer"` and `conceptId: null`. `known_set.json` is `{"conceptIds":["concept-id"]}` and must be prerequisite-closed. Load the graph or artifact prompt for those schemas only when needed.
+Source `type` is `text` or `pdf`; its path is exactly `sources/<source-id>.txt` or `sources/<source-id>.pdf`. Omit unavailable optional source fields rather than writing placeholders. Keep topic eyebrow/summary navigational, without uncited factual claims. Artifact metadata must equal its artifact file. A non-null `conceptId` requires `kind: "concept"`, must exist in the graph, and is unique in the artifact list. General saved answers use `kind: "answer"` and `conceptId: null`. `known_set.json` is `{"conceptIds":["concept-id"]}` and must be prerequisite-closed. Load the graph prompt for its schema only when needed; the session manager owns the artifact schema below.
+
+The durable artifact JSON schema is:
+
+```json
+{
+  "id": "artifact-id",
+  "conceptId": "concept-id-or-null",
+  "kind": "concept-or-answer",
+  "title": "Short title",
+  "summary": "Navigational summary",
+  "updatedAt": "YYYY-MM-DD",
+  "sourceHashes": {"source-id":"current-64-hex-sha256"},
+  "sections": [{
+    "id": "section-id",
+    "title": "Section title",
+    "kind": "source-or-conflict",
+    "purpose": "lesson-review-remediation-or-answer",
+    "markdown": "Supported section Markdown without H1/H2 or citation marker lines.",
+    "citationIds": ["citation-id"]
+  }],
+  "citations": [{
+    "id": "citation-id",
+    "kind": "source",
+    "sourceId": "source-id",
+    "locator": "Exact locator"
+  }]
+}
+```
+
+Use only those keys; a citation may additionally have a non-empty `note`. IDs are unique, every section has non-empty unique citation IDs, every citation is used, and a conflict section has at least two citations. `sourceHashes` contains exactly the source IDs cited anywhere in the artifact and their exact current file hashes. A concept artifact has `kind: "concept"` and a valid non-null concept ID; a general saved answer has `kind: "answer"` and `conceptId: null`. The six metadata fields through `updatedAt` exactly match its `topic.json` artifact entry, whose path is `artifacts/<id>.json`.
 
 ## Renderer API
 
@@ -87,7 +117,7 @@ Use absolute prompt paths beneath `<skill-root>/src/prompts`:
 - boundary quiz: `knowledge_boundary_quiz.md`
 - revision quiz: `revision_quiz.md`
 
-Spawn every specialist with `fork_turns: "none"`. Tell it to read the absolute `shared.md` path and exactly one matching specialist prompt, then give a self-contained handoff: role and mode, exact task, each needed source's ID, type, absolute path, SHA-256, and scope, relevant graph/known state, and required response fields. A direct-source specialist reads those scoped original regions itself. A graph-synthesis specialist instead receives the complete compact chunk inventories and no original files. Send no chat history, old artifacts, secrets, or unrelated sources. A specialist never persists or addresses the learner.
+Spawn every specialist with `fork_turns: "none"`. Tell it to read the absolute `shared.md` path and exactly one matching specialist prompt, then give a self-contained handoff: role and mode, exact task, each needed source's ID, type, absolute path, SHA-256, and scope, relevant graph/known state, and required response shape. A direct-source specialist reads those scoped original regions itself. A graph-synthesis specialist instead receives the complete compact chunk inventories and no original files. Send no chat history, old artifacts, secrets, or unrelated sources. A specialist never persists or addresses the learner. Graph and quiz specialists return their prompt's strict JSON; the learning-content specialist returns cited Markdown for the session manager to convert.
 
 For PDF text, use the bundled local open-source extractor (installing its single Python package on demand):
 
@@ -104,7 +134,7 @@ For an initial or reconciliation graph over a PDF longer than 80 pages, delegati
 
 Never keep completed chunk inventories only in conversation context. Before spawning chunks, create one OS-temporary inventory directory and an atomic manifest containing the source hashes and every expected disjoint range. As each specialist returns, validate its strict JSON, source hash, assigned scope, and concept-boundary compliance, then atomically write the exact response to a range-named JSON file, hash that file, and atomically mark the manifest entry complete. A chunk is not complete until this checkpoint exists. Before synthesis, re-read the manifest and require that every expected range appears exactly once, all source and file hashes still match, and every checkpoint still validates; retry only a missing or invalid range. Start one fresh synthesis specialist only after this gate passes, supplying the checkpoint files and no original source. Retain the temporary directory until the final graph is validated and persisted or the proposal ends, then remove it.
 
-Record exact source and relevant state hashes before specialist work; reject a result if an input changed. If delegation is unavailable, load the one matching specialist prompt and execute it in the manager context, preserving its scope and response contract. Accept only strict JSON, reject extra fields, and independently validate it before preview or persistence.
+Record exact source and relevant state hashes before specialist work; reject a result if an input changed. If delegation is unavailable, load the one matching specialist prompt and execute it in the manager context, preserving its scope and response contract. Independently validate every result before preview or persistence: reject unknown or malformed fields in strict-JSON responses, and reject malformed Markdown or citation markers from the learning-content specialist.
 
 ## Add and change sources
 
@@ -169,9 +199,15 @@ Open the temporary `index.html` and ask for approval or corrections. Any input-h
 
 A request only to recommend or name the next concept is recommendation-only: choose a prerequisite-ready unknown node, resolve ties by learner usefulness, explain briefly, and do not create output or state. If the graph is empty, say a source is needed; if no node is unknown, say the current graph is complete rather than inventing a recommendation.
 
-An explicit request to learn, study, be taught, review, or create learning material authorizes one concept-artifact write. A plain explanation request follows the preview-only answer flow below. If no concept is named, choose the prerequisite-ready frontier and proceed without an extra confirmation; if a non-empty graph is fully known, ask which concept to review, and if the graph is empty request a source. Use a fresh artifact specialist with exactly the concept's persisted source scopes and required prerequisite scopes. For a PDF, provide only the page-scoped extractor command above and require the specialist to work from its output. Initial learning and review replace the single concept artifact from current sources and preserve the scoped source's full level of detail rather than summarizing it. Append a structured section only when the learner explicitly asks to retain a current, valid artifact. Choose the fresh replacement artifact ID before delegation; supply that response ID plus the old title, summary, kind, concept ID, and reserved section/citation IDs, never old sections or prose. If that artifact is stale, require replacement. Validate hashes and ID uniqueness, preserve old section order, append new sections in response order, and union current source hashes. Stage the merged artifact under that fresh ID, atomically switch topic metadata to it, then remove the old disposable file, render, and reload.
+An explicit request to learn, study, be taught, review, or create learning material authorizes one concept-artifact write. A plain explanation request follows the preview-only answer flow below. If no concept is named, choose the prerequisite-ready frontier and proceed without an extra confirmation; if a non-empty graph is fully known, ask which concept to review, and if the graph is empty request a source. Use a fresh learning-content specialist with exactly the concept's persisted source scopes and required prerequisite scopes. For a PDF, provide only the page-scoped extractor command above and require the specialist to work from its output. Initial learning and review replace the single concept artifact from current sources and preserve the scoped source's full level of detail rather than summarizing it. Append a structured section only when the learner explicitly asks to retain a current, valid artifact. Choose the fresh replacement artifact ID before delegation but send no storage metadata or old prose to the specialist. If the current artifact is stale, require replacement.
 
-For a substantive question or graph explanation, read the sources rather than artifacts and use the artifact specialist in answer/comparison mode. Reuse the preview envelope above with `kind: "answer"`, the exact returned sections/citations, and no `proposedGraph` or `proposedKnownSet`; omit empty title/context. Save only when the learner explicitly requests persistence. A concept-linked saved answer becomes a section of that concept's one current artifact under the same append validation above (or creates it if absent); a topic-level saved answer uses `conceptId: null`.
+The learning-content specialist returns Markdown, never artifact JSON. Recognize insufficiency only when the first line is exactly `# Insufficient source material`. Otherwise parse outside fenced code only, without rewriting, summarizing, or otherwise editing the learning prose. For `replace` and `preview`, require exactly one plain-text H1 as the first non-blank line and take it as the proposed title; for `append`, reject any H1 and preserve the current title. Require at least one plain-text H2 and reject prose outside H2 sections. Split H2 sections in order, strip `Conflict:` from a conflict section's stored title, and classify it as `kind: "conflict"`; classify other sections as `kind: "source"`.
+
+Recognize only exact inline citation markers of the form ``[`source-id`: page 12]``, ``[`source-id`: pages 12-14]``, ``[`source-id`: line 12]``, or ``[`source-id`: lines 12-14]`` outside fenced and inline code. Require the singular/plural locator type to match the source type and every inclusive numeric range to be contained by the delegated scope. Within each section, assign each unique source-and-locator pair a one-based number in first-use order and mechanically replace its markers with `[n]`; preserve all other prose exactly. Store the canonical numeric locator as the citation `locator`, reuse one structured citation for identical pairs, and list each section's citation IDs in the same first-use order. Require every substantive claim group to have an adjacent marker, every section to use at least one citation, and a conflict section to cite at least two distinct attributed positions. Assign IDs unique across the complete target artifact, including existing IDs on append, and map `taskKind` to section `purpose` (`comparison` becomes `answer`). Validate the converted section body against the renderer's Markdown subset stated in `learn.md`. Reject extra H1s, empty sections, unsupported Markdown, malformed markers, unknown source IDs, or out-of-scope ranges.
+
+For a durable artifact, wrap the converted content in the artifact JSON schema above with the fresh artifact ID, exact current source hashes, concept ID, kind, date, and a short navigational summary containing no substantive claim. For `append`, preserve only the current title, summary, kind, concept ID, and old section order; use the fresh ID, path, and date, append the converted sections, and set `sourceHashes` to the exact current hashes of all sources cited by old or new sections. Validate the complete artifact JSON and ID uniqueness, stage it under the fresh ID, atomically switch topic metadata to it, then remove the old disposable file, render, and reload.
+
+For a substantive question or graph explanation, read the sources rather than artifacts and use the learning-content specialist in answer/comparison mode. Convert its Markdown as above, then reuse the preview envelope with `kind: "answer"`, the converted title, sections, and citations, and no `proposedGraph` or `proposedKnownSet`; omit empty context. Save only when the learner explicitly requests persistence. A concept-linked saved answer becomes a section of that concept's one current artifact under the same append validation above (or creates it if absent); a topic-level saved answer uses `conceptId: null`.
 
 If the sources are insufficient, ask for more text or a PDF.
 

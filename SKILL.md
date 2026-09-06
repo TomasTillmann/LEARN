@@ -27,4 +27,4 @@ Load exactly one specialist prompt only when its task is needed:
 - knowledge-boundary quiz: [`src/prompts/knowledge_boundary_quiz.md`](src/prompts/knowledge_boundary_quiz.md)
 - revision quiz: [`src/prompts/revision_quiz.md`](src/prompts/revision_quiz.md)
 
-The session manager owns chat and persistence. Specialists return strict JSON data and never address the learner or write files. The fixed renderer owns all HTML and the layered DAG UI.
+The session manager owns chat, artifact conversion, and persistence. Graph and quiz specialists return strict JSON; learning-content specialists return cited Markdown for the session manager to convert. Specialists never address the learner or write files. The fixed renderer owns all HTML and the layered DAG UI.
