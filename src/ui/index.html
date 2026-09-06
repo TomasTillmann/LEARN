@@ -34,7 +34,7 @@
     :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     .skip { position: fixed; z-index: 50; top: 8px; left: 8px; padding: 8px 10px; background: #fff; color: #111; transform: translateY(-160%); }
     .skip:focus { transform: none; }
-    .app { height: 100%; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
+    .app { height: 100%; display: grid; grid-template: minmax(0, 1fr) / 260px minmax(0, 1fr); }
     .sidebar { min-width: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; border-right: 1px solid var(--border); background: var(--panel); }
     .brand { min-height: 46px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); color: var(--text); font-weight: 700; text-decoration: none; }
     .brand svg { width: 16px; color: var(--accent); }
@@ -516,14 +516,38 @@
         }
 
         function resetView() {
-          const xs = points.map(point => point.x), ys = points.map(point => point.y), spanX = Math.max(...xs) - Math.min(...xs) + 180, spanY = Math.max(...ys) - Math.min(...ys) + 140;
-          scale = Math.max(.45, Math.min(1.35, width / spanX, height / spanY)); panX = -(Math.max(...xs) + Math.min(...xs)) / 2; panY = -(Math.max(...ys) + Math.min(...ys)) / 2; drawGraph();
+          const graphBounds = atScale => {
+            const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+            points.forEach(point => {
+              const x = point.x * atScale, y = point.y * atScale, radius = Math.max(2.5, point.radius * Math.sqrt(atScale)), fontSize = Math.max(10, Math.min(14, 11 * Math.sqrt(atScale)));
+              context.font = `400 ${fontSize}px Inter, sans-serif`;
+              const labelWidth = atScale > .42 ? 9 + context.measureText(point.label).width : radius;
+              bounds.minX = Math.min(bounds.minX, x - radius); bounds.maxX = Math.max(bounds.maxX, x + Math.max(radius, labelWidth));
+              bounds.minY = Math.min(bounds.minY, y - Math.max(radius, atScale > .42 ? fontSize - 4 : 0)); bounds.maxY = Math.max(bounds.maxY, y + Math.max(radius, atScale > .42 ? 4 + fontSize / 4 : 0));
+            });
+            return bounds;
+          };
+          const padding = 36;
+          let low = .05, high = 1.35;
+          for (let iteration = 0; iteration < 20; iteration += 1) {
+            const candidate = (low + high) / 2, bounds = graphBounds(candidate);
+            if (bounds.maxX - bounds.minX <= width - padding * 2 && bounds.maxY - bounds.minY <= height - padding * 2) low = candidate;
+            else high = candidate;
+          }
+          scale = low;
+          const bounds = graphBounds(scale);
+          panX = -(bounds.minX + bounds.maxX) / (2 * scale); panY = -(bounds.minY + bounds.maxY) / (2 * scale); drawGraph();
         }
 
         function runSimulation() {
           frame = null;
           const movement = tickGraph() + tickGraph(); ticks += 2; drawGraph();
           if (canvas.isConnected && ticks < 260 && movement > .01) frame = requestAnimationFrame(runSimulation);
+        }
+
+        function settleGraph() {
+          let movement = Infinity, settleTicks = 0;
+          while (settleTicks < 4000 && movement > .01) { movement = tickGraph() + tickGraph(); settleTicks += 2; }
         }
 
         function heatGraph() { ticks = 0; if (frame === null) frame = requestAnimationFrame(runSimulation); }
@@ -542,15 +566,13 @@
         });
         canvas.addEventListener("pointerup", event => { if (drag?.point && !drag.moved) { const artifact = artifacts.get(drag.point.id); location.hash = artifact ? routeHref("artifact", topic.projectId, topic.id, artifact.id) : routeHref("concept", topic.projectId, topic.id, drag.point.id); } drag = null; canvas.releasePointerCapture(event.pointerId); canvas.classList.remove("dragging"); });
         canvas.addEventListener("pointerleave", () => { if (!drag) { hoverId = null; drawGraph(); } });
-        canvas.addEventListener("wheel", event => { event.preventDefault(); const beforeX = (event.offsetX - width / 2) / scale - panX, beforeY = (event.offsetY - height / 2) / scale - panY; scale = Math.max(.25, Math.min(4, scale * Math.exp(-event.deltaY * .001))); panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph(); }, { passive: false });
+        canvas.addEventListener("wheel", event => { event.preventDefault(); const beforeX = (event.offsetX - width / 2) / scale - panX, beforeY = (event.offsetY - height / 2) / scale - panY; scale = Math.max(.05, Math.min(4, scale * Math.exp(-event.deltaY * .001))); panX = (event.offsetX - width / 2) / scale - beforeX; panY = (event.offsetY - height / 2) / scale - beforeY; drawGraph(); }, { passive: false });
         zoomIn.addEventListener("click", () => { scale = Math.min(4, scale * 1.2); drawGraph(); });
-        zoomOut.addEventListener("click", () => { scale = Math.max(.25, scale / 1.2); drawGraph(); });
+        zoomOut.addEventListener("click", () => { scale = Math.max(.05, scale / 1.2); drawGraph(); });
         reset.addEventListener("click", resetView);
 
         const observer = new ResizeObserver(() => { resizeCanvas(); resetView(); }); observer.observe(canvas);
-        resizeCanvas(); resetView();
-        if (matchMedia("(prefers-reduced-motion: reduce)").matches) { for (let tick = 0; tick < 260; tick += 1) tickGraph(); resetView(); }
-        else heatGraph();
+        resizeCanvas(); settleGraph(); resetView();
         graphCleanup = () => { if (frame !== null) cancelAnimationFrame(frame); observer.disconnect(); };
       }
 
