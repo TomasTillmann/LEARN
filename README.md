@@ -11,7 +11,7 @@ The session manager owns learner chat, approvals, workspace state, artifact conv
 3. Each graph node persists exact `sourceScopes`. A fresh lesson agent reads only those regions and preserves their definitions, reasoning, examples, qualifications, and useful wording.
 4. The deterministic renderer validates workspace JSON and builds the read-only layered DAG and learning pages with bundled offline KaTeX 0.18.1 math rendering.
 
-Original sources and validated JSON are durable. Rendered HTML, graph proposals, and chunk checkpoints are disposable. Specialists never write files or address the learner; the session manager validates their output before persistence.
+Original sources and validated JSON are durable. Rendered HTML, graph proposals, and chunk checkpoints are disposable. Each chat keeps its own project context and temporary previews, while validated workspace files remain shared, so multiple chats can work without a global topic selection. Specialists never write files or address the learner; the session manager validates their output before persistence.
 
 ## Files
 

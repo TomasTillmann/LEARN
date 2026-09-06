@@ -192,8 +192,9 @@
       const safeLocal = value => { if (typeof value !== "string" || !value) return null; try { const url = new URL(value, document.baseURI); return url.protocol === "file:" ? url.href : null; } catch { return null; } };
 
       function defaultRoute() {
-        const current = data.workspace.current;
-        return current && topicFor(current.projectId, current.topicId) ? { kind: "topic", projectId: current.projectId, topicId: current.topicId, view: "graph" } : { kind: "workspace" };
+        const target = data.session?.target;
+        if (target && topicFor(target.projectId, target.topicId)) return { kind: "topic", projectId: target.projectId, topicId: target.topicId, view: data.session.kind === "answer" ? "session" : "graph" };
+        return { kind: "workspace" };
       }
 
       function parseRoute() {
@@ -211,8 +212,7 @@
       }
 
       function activeSession(topic) {
-        const current = data.workspace.current;
-        return data.session?.active && current?.projectId === topic?.projectId && current?.topicId === topic?.id ? data.session : null;
+        return data.session?.active && data.session.target.projectId === topic?.projectId && data.session.target.topicId === topic?.id ? data.session : null;
       }
 
       function graphState(topic) {
@@ -258,7 +258,7 @@
         else if (session?.kind === "graph-proposal") { status.textContent = "Graph preview"; status.classList.add("warning"); }
         else if (topic.reconciliationRequired) { status.textContent = topic.reconciliationReasons.length ? "Graph stale" : "Review needed"; status.classList.add(topic.reconciliationReasons.length ? "danger" : "warning"); }
         else if (session?.kind === "answer" && route.view === "session") { status.textContent = "Answer preview"; status.classList.add("warning"); }
-        else status.textContent = "Current";
+        else status.textContent = "Ready";
       }
 
       function renderBreadcrumb(route, topic, artifact) {

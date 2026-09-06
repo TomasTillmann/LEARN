@@ -17,7 +17,7 @@ Universal invariants live in `src/prompts/shared.md`; exact schemas and procedur
 
 ## Surfaces and authority
 
-Chat owns commands, approvals, learner answers, and complete quiz exchanges. A quiz asks one question at a time and writes state only after the learner approves its final proposal.
+Each chat owns its project context, commands, approvals, learner answers, previews, and complete quiz exchanges. A quiz asks one question at a time and writes state only after the learner approves its final proposal. Chats share only durable workspace files; proposal hashes prevent stale approvals across concurrent chats.
 
 The workspace manifest, topic manifests, original Sources, concept graph, known set, and structured artifact JSON are authoritative. Rendered HTML, temporary previews, quiz exchanges, and rejected proposals are disposable and never become factual input.
 
@@ -77,7 +77,7 @@ Never persist a score, confidence, percentage, partial mastery, frontier, or rec
 
 ### Create a workspace or topic
 
-An empty workspace is valid and has `current: null`. Creating a topic builds and validates its skeleton and, when supplied, its first Source before registering it. Once a Source exists, LEARN proposes a complete grounded graph. Rejecting or correcting it leaves graph-dependent learning paused. Graph approval leaves artifacts empty.
+An empty workspace is valid and has an empty `projects` array. Creating a topic builds and validates its skeleton and, when supplied, its first Source before registering it. Once a Source exists, LEARN proposes a complete grounded graph. Rejecting or correcting it leaves graph-dependent learning paused. Graph approval leaves artifacts empty. Each chat owns one project context; topic navigation is never persisted in the shared workspace, so multiple chats can work concurrently.
 
 ### Learn or review
 
@@ -93,7 +93,7 @@ A boundary quiz chooses questions that most reduce uncertainty while respecting 
 
 ### Update or delete
 
-Stage source updates and calculate graph, staleness, and known-set consequences before asking for any additional approval. Deleting an active or last topic or project sets a valid fallback selection or `current: null`. Prefer recoverable deletion when available.
+Stage source updates and calculate graph, staleness, and known-set consequences before asking for any additional approval. Deleting a topic or project never changes another shared selection because none is stored. Prefer recoverable deletion when available.
 
 ## Token and latency discipline
 

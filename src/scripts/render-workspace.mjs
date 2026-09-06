@@ -459,7 +459,7 @@ function validateStateSnapshot(snapshot, current) {
   return reasons;
 }
 
-function validateSession(session, loaded, current) {
+function validateSession(session, internals) {
   requireObject(session, "ephemeral session payload");
   onlyKeys(session, ["active", "kind", "target", "title", "context", "baseHashes", "baseStateHashes", "sections", "citations", "proposedGraph", "proposedKnownSet"], "ephemeral session payload");
   if (session.active !== true) fail("ephemeral session payload must set active to true");
@@ -468,7 +468,8 @@ function validateSession(session, loaded, current) {
   onlyKeys(session.target, ["projectId", "topicId"], "session target");
   requireId(session.target.projectId, "session target project ID");
   requireId(session.target.topicId, "session target topic ID");
-  if (session.target.projectId !== current.projectId || session.target.topicId !== current.topicId) fail("session target must exactly match workspace current");
+  const loaded = internals.get(`${session.target.projectId}\u0000${session.target.topicId}`);
+  if (!loaded) fail("session target topic does not exist");
   optionalText(session.title, "session title");
   optionalText(session.context, "session context");
   const sections = session.sections === undefined ? [] : session.sections;
@@ -491,7 +492,7 @@ function validateSession(session, loaded, current) {
     staleReasons.push(...loaded.sourceProblems.values());
   }
   staleReasons.push(...validateHashSnapshot(session.baseHashes, referencedSources, loaded.currentHashes, "session baseHashes", loaded.sourceProblems));
-  return { active: true, kind: session.kind, title: session.title, context: session.context, sections, citations, proposedGraph, proposedKnownSet, stale: Boolean(staleReasons.length), staleReasons: [...new Set(staleReasons)] };
+  return { active: true, kind: session.kind, target: session.target, title: session.title, context: session.context, sections, citations, proposedGraph, proposedKnownSet, stale: Boolean(staleReasons.length), staleReasons: [...new Set(staleReasons)] };
 }
 
 function inject(template, data) {
@@ -533,7 +534,7 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg, quiet = f
   const workspaceFile = await existingPath(workspaceRoot, "workspace.json", "workspace metadata path");
   const [{ value: workspace }, template] = await Promise.all([readJsonDocument(workspaceFile), readUtf8(templatePath)]);
   requireObject(workspace, "workspace metadata");
-  onlyKeys(workspace, ["name", "current", "projects"], "workspace metadata");
+  onlyKeys(workspace, ["name", "projects"], "workspace metadata");
   requireText(workspace.name, "workspace name");
   requireArray(workspace.projects, "workspace projects");
   const projectIds = new Set();
@@ -568,16 +569,6 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg, quiet = f
       if (pathsOverlap(refs[left].root, refs[right].root)) fail(`topic paths must not overlap: ${refs[left].id} and ${refs[right].id}`);
     }
   }
-  let current = null;
-  if (!Object.hasOwn(workspace, "current")) fail("workspace metadata must contain current");
-  if (workspace.current !== null) {
-    requireObject(workspace.current, "workspace current");
-    onlyKeys(workspace.current, ["projectId", "topicId"], "workspace current");
-    requireId(workspace.current.projectId, "workspace current project ID");
-    requireId(workspace.current.topicId, "workspace current topic ID");
-    current = { projectId: workspace.current.projectId, topicId: workspace.current.topicId };
-    if (!refs.some((ref) => ref.projectId === current.projectId && ref.id === current.topicId)) fail("workspace current topic does not exist");
-  }
   const loadedTopics = [];
   const internals = new Map();
   for (const ref of refs) {
@@ -587,10 +578,9 @@ async function render(workspaceRootArg, outputRootArg, sessionPathArg, quiet = f
   }
   let session;
   if (sessionPath) {
-    if (!current) fail("ephemeral session requires a current topic");
-    session = validateSession((await readJsonDocument(sessionPath)).value, internals.get(`${current.projectId}\u0000${current.topicId}`), current);
+    session = validateSession((await readJsonDocument(sessionPath)).value, internals);
   }
-  const html = inject(template, { workspace: { name: workspace.name, current, projects }, topics: loadedTopics, ...(session ? { session } : {}) });
+  const html = inject(template, { workspace: { name: workspace.name, projects }, topics: loadedTopics, ...(session ? { session } : {}) });
   await replaceDirectory(outputRoot, html);
   if (!quiet) {
     console.log(`Rendered offline workspace to ${path.join(outputRoot, "index.html")}`);
@@ -606,6 +596,7 @@ async function check() {
   assert.doesNotMatch(template, /\.innerHTML\s*=/);
   for (const marker of ['id="learn-data"', "function layoutDag", "function renderGraph", "renderMarkdown", "aria-expanded"]) assert.ok(template.includes(marker));
   assert.doesNotMatch(template, /requestAnimationFrame/);
+  assert.doesNotMatch(template, /workspace\.current/);
   const inlinePatternSource = template.match(/const inlinePattern = (\/[^\n]+\/gu);/)?.[1];
   assert.ok(inlinePatternSource);
   const inlinePattern = new Function(`return ${inlinePatternSource}`)();
@@ -670,7 +661,7 @@ async function check() {
     await mkdir(path.join(topicRoot, "sources"), { recursive: true });
     await mkdir(path.join(topicRoot, "artifacts"), { recursive: true });
     const topicText = JSON.stringify(topic), graphText = JSON.stringify(graph), knownText = JSON.stringify(known);
-    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
     await writeFile(path.join(topicRoot, "topic.json"), topicText);
     await writeFile(path.join(topicRoot, "concept_graph.json"), graphText);
     await writeFile(path.join(topicRoot, "known_set.json"), knownText);
@@ -686,6 +677,7 @@ async function check() {
     const match = html.match(/<script type="application\/json" id="learn-data">([\s\S]*?)<\/script>/);
     assert(match);
     const payload = JSON.parse(match[1]);
+    assert(!Object.hasOwn(payload.workspace, "current"));
     assert.equal(payload.topics.length, 1);
     assert.equal(payload.topics[0].artifacts[0].stale, false);
     assert.equal(payload.topics[0].sources.length, 2);
@@ -711,26 +703,28 @@ async function check() {
     const renderedBeforeRejectedInputs = await readFile(path.join(outputRoot, "index.html"));
     const nestedRoot = path.join(topicRoot, "nested");
     await mkdir(nestedRoot);
-    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }, { id: "nested", name: "Nested", path: "projects/p/topics/t/nested" }] }] }));
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }, { id: "nested", name: "Nested", path: "projects/p/topics/t/nested" }] }] }));
     await assert.rejects(render(workspaceRoot, undefined, undefined, true), /topic paths must not overlap/);
     assert.deepEqual(await readFile(path.join(outputRoot, "index.html")), renderedBeforeRejectedInputs);
-    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "html" }] }] }));
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "html" }] }] }));
     await assert.rejects(render(workspaceRoot, undefined, undefined, true), /topic path overlaps disposable renderer output/);
     assert.deepEqual(await readFile(path.join(outputRoot, "index.html")), renderedBeforeRejectedInputs);
     await mkdir(path.join(root, "outside"));
-    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "../outside" }] }] }));
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "../outside" }] }] }));
     await assert.rejects(render(workspaceRoot, undefined, undefined, true), /must be a normalized relative path/);
     assert.deepEqual(await readFile(path.join(outputRoot, "index.html")), renderedBeforeRejectedInputs);
-    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", current: { projectId: "p", topicId: "t" }, projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
+    await writeFile(path.join(workspaceRoot, "workspace.json"), JSON.stringify({ name: "Workspace", projects: [{ id: "p", name: "Project", topics: [{ id: "t", name: "Topic", path: "projects/p/topics/t" }] }] }));
     const previewRoot = path.join(root, "preview");
     const sessionPath = path.join(previewRoot, "session.json");
     await mkdir(previewRoot);
     const session = { active: true, kind: "answer", target: { projectId: "p", topicId: "t" }, title: "Safe preview", baseHashes: { source: sourceHash }, baseStateHashes: { topic: sha256(topicText), conceptGraph: sha256(graphText), knownSet: sha256(knownText) }, sections: [{ id: "answer", title: "Answer", kind: "source", purpose: "answer", markdown: "A current answer.", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "source", sourceId: "source", locator: "Line 1" }] };
     await writeFile(sessionPath, JSON.stringify({ ...session, target: { projectId: "p", topicId: "wrong" } }));
-    await assert.rejects(render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true), /session target must exactly match workspace current/);
+    await assert.rejects(render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true), /session target topic does not exist/);
     await writeFile(sessionPath, JSON.stringify(session));
     const preview = await render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true);
-    assert.equal(JSON.parse(preview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).session.stale, false);
+    const previewPayload = JSON.parse(preview.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]);
+    assert.equal(previewPayload.session.stale, false);
+    assert.deepEqual(previewPayload.session.target, session.target);
     session.baseStateHashes.knownSet = "0".repeat(64);
     await writeFile(sessionPath, JSON.stringify(session));
     const stalePreview = await render(workspaceRoot, path.join(previewRoot, "rendered"), sessionPath, true);
@@ -745,7 +739,7 @@ async function check() {
     assert.equal(graphPayload.session.proposedGraph.nodes[0].evidence[0].locator, "Line 1");
     const emptyRoot = path.join(root, "empty");
     await mkdir(emptyRoot);
-    await writeFile(path.join(emptyRoot, "workspace.json"), JSON.stringify({ name: "Empty", current: null, projects: [] }));
+    await writeFile(path.join(emptyRoot, "workspace.json"), JSON.stringify({ name: "Empty", projects: [] }));
     const empty = await render(emptyRoot, undefined, undefined, true);
     assert.deepEqual(JSON.parse(empty.html.match(/id="learn-data">([\s\S]*?)<\/script>/)[1]).topics, []);
   } finally {

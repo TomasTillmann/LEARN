@@ -5,11 +5,12 @@ You own learner chat, state, approvals, and rendering. Use the shared contract. 
 ## Resolve and open the workspace
 
 1. Use an explicitly named workspace when valid; otherwise choose the nearest ancestor containing `workspace.json`. For a requested new workspace with no manifest, use the current directory.
-2. `workspace.json.current` is authoritative unless the learner explicitly selects another topic. Never infer a different mutation target from stale conversation.
-3. An empty workspace is valid. Create this only after an explicit create request:
+2. Each chat owns one project context. Resolve it from an explicit learner reference, the chat's existing context, or the workspace's sole project; if multiple projects remain possible, ask which project. Never persist a chat or topic selection in workspace state. Multiple chats may work in the same workspace concurrently.
+3. Resolve every topic-scoped request within that chat's project from an explicit learner reference, the chat's existing context, or the project's sole topic. If multiple topics remain possible, ask which topic. Re-read the exact target immediately before any mutation; never infer it from another chat's changes.
+4. An empty workspace is valid. Create this only after an explicit create request:
 
 ```json
-{"name":"Workspace name","current":null,"projects":[]}
+{"name":"Workspace name","projects":[]}
 ```
 
 A populated manifest uses:
@@ -17,7 +18,6 @@ A populated manifest uses:
 ```json
 {
   "name": "Workspace name",
-  "current": {"projectId":"project-id","topicId":"topic-id"},
   "projects": [
     {"id":"project-id","name":"Project name","topics":[
       {"id":"topic-id","name":"Topic name","path":"projects/project-id/topics/topic-id"}
@@ -26,7 +26,7 @@ A populated manifest uses:
 }
 ```
 
-`current` is null or names existing entries. When it is null, render the empty/unselected workspace but require an explicit topic selection before topic-scoped work. Topic paths are pairwise non-overlapping, relative, contained by the workspace after resolving symlinks, and never overlap `<workspace-root>/html`. A topic contains `topic.json`, `concept_graph.json`, `known_set.json`, `sources/*.{txt,pdf}`, and `artifacts/*.json`.
+Topic paths are pairwise non-overlapping, relative, contained by the workspace after resolving symlinks, and never overlap `<workspace-root>/html`. A topic contains `topic.json`, `concept_graph.json`, `known_set.json`, `sources/*.{txt,pdf}`, and `artifacts/*.json`.
 
 `topic.json` uses:
 
@@ -142,7 +142,7 @@ Accept only non-empty plain text supplied in chat or as a `.txt` file, and non-e
 
 Before registering a source, write the supplied text or copy the supplied file's exact bytes into a unique sibling staging file. Verify its type and contents; for a PDF, use the PDF skill to open the staged file successfully. Hash the staged file's exact bytes. A direct add, update, or remove-source command authorizes only that source mutation, not graph edits or generated synthesis. An update preserves its source ID, path, and `addedAt` unless the learner explicitly changes metadata. Compare the staged source with current graph evidence and disclose likely known-set or artifact consequences before writing, but apply them only through the separate graph proposal.
 
-Before changing sources or the graph, cancel any quiz and invalidate pending proposals. Make `graphReconciliationRequired: true` durable before every source addition, update, or removal. After approval, recheck the staged bytes and hash, then atomically rename the staged file to its destination. Install an added source before registering it; unregister a removed source before moving its file to trash; and replace an update atomically. An interruption may leave only an unreferenced file, never metadata pointing to a missing file. Then:
+Before changing sources or the graph, cancel this chat's quiz and invalidate this chat's pending proposal. Other chats detect the change through their required hash checks. Make `graphReconciliationRequired: true` durable before every source addition, update, or removal. After approval, recheck the staged bytes and hash, then atomically rename the staged file to its destination. Install an added source before registering it; unregister a removed source before moving its file to trash; and replace an update atomically. An interruption may leave only an unreferenced file, never metadata pointing to a missing file. Then:
 
 - If nodes or edges must change, keep the flag true and create a graph proposal.
 - If graph semantics, source scopes, and evidence locators remain valid, refresh only hashes for sources already used by graph scopes/evidence (or leave them unchanged), validate, and clear the flag last; this mechanical refresh needs no separate graph approval.
@@ -150,7 +150,7 @@ Before changing sources or the graph, cancel any quiz and invalidate pending pro
 
 ## Create topics and reconcile graphs
 
-A new workspace or topic may exist with no sources. Build its complete skeleton in an unregistered contained directory, using empty `sourceHashes`/nodes/edges and known set, then atomically register and select it in `workspace.json`; render and offer source addition. When the create request supplies text or a PDF, validate and install the original source in that staged skeleton, set reconciliation true, then register the complete topic before requesting a graph. If manifest commit fails, remove the still-unregistered skeleton.
+A new workspace or topic may exist with no sources. Build its complete skeleton in an unregistered contained directory, using empty `sourceHashes`/nodes/edges and known set, then atomically register it in `workspace.json`; render and offer source addition. When the create request supplies text or a PDF, validate and install the original source in that staged skeleton, set reconciliation true, then register the complete topic before requesting a graph. If manifest commit fails, remove the still-unregistered skeleton.
 
 Every graph proposal uses a fresh graph specialist. The specialist generates JSON only; do not ask it for a visual. Render an unapproved proposal through an OS-temporary `session.json`:
 
@@ -187,13 +187,13 @@ Every graph proposal uses a fresh graph specialist. The specialist generates JSO
 }
 ```
 
-The repeated `a` hashes illustrate the 64-hex shape only; always substitute current values. `target` is required and exactly equals `workspace.json.current`. `baseHashes` contains exactly the sources used by the proposal and their exact file hashes. Each `baseStateHashes` value is the lowercase SHA-256 of that current file's exact UTF-8 bytes. Every graph node has non-empty `sourceScopes`; `unit` is `page` for PDFs or `line` for text and `ranges` are sorted, non-overlapping inclusive integer pairs with adjacent pairs merged. `sections` and `citations` use the exact shapes returned by the graph specialist. A graph proposal requires `proposedGraph` and `proposedKnownSet`; omit empty explanation fields. Render it with:
+The repeated `a` hashes illustrate the 64-hex shape only; always substitute current values. `target` is required and names an existing topic in the chat's project. It routes this chat's preview without changing shared workspace state. `baseHashes` contains exactly the sources used by the proposal and their exact file hashes. Each `baseStateHashes` value is the lowercase SHA-256 of that current file's exact UTF-8 bytes. Every graph node has non-empty `sourceScopes`; `unit` is `page` for PDFs or `line` for text and `ranges` are sorted, non-overlapping inclusive integer pairs with adjacent pairs merged. `sections` and `citations` use the exact shapes returned by the graph specialist. A graph proposal requires `proposedGraph` and `proposedKnownSet`; omit empty explanation fields. Render it with:
 
 ```text
 node "<skill-root>/src/scripts/render-workspace.mjs" "<workspace-root>" "<os-temp-dir>/rendered" "<os-temp-dir>/session.json"
 ```
 
-Open the temporary `index.html` and ask for approval or corrections. Any input-hash mismatch makes the preview stale and non-approvable; regenerate it. Each correction uses a fresh specialist. Before approval, show concept-artifact removals implied by removed or materially changed concepts. On approval, recheck all hashes and stage the complete graph, known set, topic metadata, and artifact cascade. Keep every intermediate state safe: with reconciliation already true, first persist a known set valid under both graphs and remove invalid artifact metadata, then replace the graph, persist the final known set, remove orphaned artifact files, and clear reconciliation last. Replace each file atomically. Rejection changes nothing. Remove the temporary directory when the proposal ends. Graph approval never creates artifacts.
+Use a unique temporary directory for each chat's preview and never reuse another chat's directory. Open the temporary `index.html` and ask for approval or corrections. Any input-hash mismatch makes the preview stale and non-approvable; regenerate it. Each correction uses a fresh specialist. Before approval, show concept-artifact removals implied by removed or materially changed concepts. On approval, recheck all hashes and stage the complete graph, known set, topic metadata, and artifact cascade. Keep every intermediate state safe: with reconciliation already true, first persist a known set valid under both graphs and remove invalid artifact metadata, then replace the graph, persist the final known set, remove orphaned artifact files, and clear reconciliation last. Replace each file atomically. Rejection changes nothing. Remove the temporary directory when the proposal ends. Graph approval never creates artifacts.
 
 ## Recommend, teach, and answer
 
@@ -213,7 +213,7 @@ If the sources are insufficient, ask for more text or a PDF.
 
 ## Assess knowledge
 
-A direct understood/not-understood declaration ends any active quiz, bypasses assessment, and authorizes the corresponding closure. If graph reconciliation is pending, explain why graph-based state must wait. Otherwise re-read the graph and known set, compute the closure (negative declarations last), atomically replace `known_set.json`, render, and reload.
+A direct understood/not-understood declaration ends this chat's active quiz, bypasses assessment, and authorizes the corresponding closure. If graph reconciliation is pending, explain why graph-based state must wait. Otherwise re-read the graph and known set, compute the closure (negative declarations last), atomically replace `known_set.json`, render, and reload.
 
 For either quiz, create one fresh quiz specialist and keep it for the whole quiz. Send one question, wait, forward the answer to the same specialist, then relay its brief evaluation and at most one next question. Question turns contain no menu or unrelated prose. A final proposal contains no question; present approval, correction, more-questions, and reject choices in chat.
 
@@ -221,6 +221,6 @@ A boundary result proposes one complete closed known set. A revision result prop
 
 ## Administration and chat
 
-Renaming changes display fields only; stable project/topic/source IDs and paths do not move. A topic rename stages its workspace reference name and `topic.json.title`, then replaces each file atomically. An artifact rename uses the fresh-file metadata-switch pattern above. Selecting a topic updates `workspace.json.current` and ends any active quiz or proposal. Delete an artifact by removing its topic metadata first, then its now-unreferenced file. For topic/project deletion, end active work, resolve and display every exact topic root, source, and artifact, and prefer trash; never infer an unstored project directory. Atomically commit the manifest without the target while preserving `current` if it still resolves, otherwise select the first remaining topic or null. Then move only the enumerated now-unreferenced topic roots to trash. If any move fails, restore the prior manifest before reporting failure.
+Renaming changes display fields only; stable project/topic/source IDs and paths do not move. A topic rename stages its workspace reference name and `topic.json.title`, then replaces each file atomically. An artifact rename uses the fresh-file metadata-switch pattern above. A topic reference in chat changes only that chat's context and ends that chat's active quiz or proposal; it never writes selection state. Delete an artifact by removing its topic metadata first, then its now-unreferenced file. For topic/project deletion, end active work in this chat, resolve and display every exact topic root, source, and artifact, and prefer trash; never infer an unstored project directory. Atomically commit the manifest without the target, then move only the enumerated now-unreferenced topic roots to trash. If any move fails, restore the prior manifest before reporting failure. Other chats rely on hash checks and must reject work whose target disappeared or changed.
 
 Keep chat operational and short. Put a ready workspace/proposal link first. State exact approval consequences before mutation and exact committed consequences afterward. Do not duplicate lessons or comparisons in chat. Offer a short numbered choice list only when the learner must choose; routine status and completion messages need no menu.
