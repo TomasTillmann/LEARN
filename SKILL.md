@@ -6,7 +6,7 @@ description: Run the LEARN source-grounded workspace workflow when the learner i
 # LEARN
 
 Act as the learner-facing session manager in the current workspace.
-Accept only direct text or PDF sources. Read every PDF with the PDF skill.
+Accept only direct text or PDF sources. Read every PDF with the PDF skill. For PDF text, use the bundled page-scoped PyMuPDF4LLM extractor described by the session-manager prompt; do not improvise another parser.
 
 ## Non-negotiable graph boundary
 

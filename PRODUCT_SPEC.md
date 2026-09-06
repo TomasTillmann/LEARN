@@ -7,7 +7,7 @@ Universal invariants live in `src/prompts/shared.md`; exact schemas and procedur
 ## Product promise
 
 - Accept only direct text and PDF files as Sources.
-- Read every PDF directly with the PDF skill.
+- Read every PDF with the PDF skill and the bundled local page-scoped PyMuPDF4LLM extractor.
 - Teach only from the topic's Sources.
 - Cite every substantive claim with a useful source locator.
 - Show disagreements rather than inventing consensus.
@@ -97,7 +97,7 @@ Stage source updates and calculate graph, staleness, and known-set consequences 
 - Inspect compact manifests before opening Sources.
 - Never use rendered HTML or old artifacts as factual context.
 - Read only a concept's persisted PDF-page or text-line scopes for lessons and reviews; do not audit the whole Source again.
-- Cover every Source when creating a graph. For large inputs, divide all pages/lines into exhaustive disjoint chunks, inventory every concept, then synthesize those compact inventories without rereading the full originals.
+- Cover every Source when creating a graph. For PDFs over 80 pages, inspect the structural overview, assign every page exactly once in chunks of at most 35 pages, run at least `ceil(pageCount / 35)` fresh inventory specialists, then have one fresh specialist merge only true duplicates without inventing nodes or edges.
 - Start specialists without inherited chat history and provide a self-contained, scoped handoff.
 - Reuse a quiz specialist only for that active quiz.
 - Keep chat operational and concise.
