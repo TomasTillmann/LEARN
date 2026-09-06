@@ -76,7 +76,7 @@ Render on activation and after every committed change:
 node "<skill-root>/src/scripts/render-workspace.mjs" "<workspace-root>" "<workspace-root>/html"
 ```
 
-Open or reload `<workspace-root>/html/index.html` directly with the available browser control; never start a server. In chat use an absolute local link such as `[Open LEARN workspace](</absolute/path/html/index.html>)`, never `file://`. If browser control is unavailable, provide the link and say that the learner must open or refresh it.
+Open or reload `<workspace-root>/html/index.html` directly with the available browser control; never start a server. In chat link only to the exact absolute entry-file path, such as `[Open LEARN workspace](</absolute/path/html/index.html>)`: never use `file://`, and never append a query or internal hash route such as `#artifact/...`. Internal routes are browser navigation after the entry file is open, not part of a chat filesystem link. If browser control is unavailable, provide the entry-file link and say that the learner must open or refresh it.
 
 ## Delegate narrowly
 
