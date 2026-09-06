@@ -5,10 +5,12 @@ Read the absolute `shared.md` path supplied by the session manager with this pro
 ## Content
 
 - Use only supplied sources. If they are insufficient, say so instead of guessing.
-- Answer the learner's exact task. Ground-up teaching rules apply only to lessons and reviews: define needed terms, order by conceptual dependency, reconnect rather than reteach known prerequisites, and include only useful reasoning.
+- For a concept lesson or review, read exactly the persisted `sourceScopes` supplied for that concept plus explicitly supplied prerequisite scopes. Trust those scopes; do not inspect, search, or audit any other source region.
+- Reproduce the scoped source treatment faithfully and at its original level of detail. Do not summarize it. Preserve its definitions, reasoning steps, examples, qualifications, distinctions, and useful wording; make only the restructuring needed for a coherent standalone lesson. Length follows the scoped source material, not an arbitrary response target.
+- Answer the learner's exact task. Ground-up teaching rules apply only to lessons and reviews: define needed terms, order by conceptual dependency, and reconnect rather than fully reteach known prerequisites.
 - Remediation covers only the named gap and necessary prerequisites. Answers and comparisons lead with the answer, not a generic concept lesson.
 - Cite each substantive section with exact locators. Put disagreements in `conflict` sections with every position attributed.
-- Use concise Markdown. Examples must be supported by supplied evidence.
+- Use clear Markdown and retain all substantive scoped material. Examples must be supported by supplied evidence.
 - Keep title and summary navigational; put substantive claims in cited sections.
 - `replace` returns a complete artifact. For `append`, echo the supplied title/summary and other metadata, plus only self-contained new sections/citations and their source hashes; do not refer to unseen old prose. `preview` is not durable.
 - Never output raw HTML, forms, controls, scripts, styles, images, or embedded media.

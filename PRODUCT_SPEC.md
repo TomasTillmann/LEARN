@@ -36,7 +36,8 @@ The browser presents navigation, the bundled gravity graph, graph state, lessons
 
 ## Grounding
 
-- Every graph node and prerequisite edge stores one or more `{sourceId, locator}` evidence references.
+- Every graph node stores exhaustive structured source scopes as a source ID, `page`/`line` unit, and inclusive integer ranges. These scopes route later concept learning without rereading the whole Source.
+- Every graph node and prerequisite edge also stores one or more `{sourceId, locator}` evidence references.
 - PDF locators use page numbers and a section, figure, or table when useful.
 - Text locators use stable heading, paragraph, or line references.
 - Graphs and artifacts store the exact source-file hashes they used.
@@ -76,7 +77,7 @@ An empty workspace is valid and has `current: null`. Creating a topic builds and
 
 ### Learn or review
 
-A recommendation names a suitable unknown concept and why; it creates nothing. A lesson or review reads the original source regions cited by that concept and its required prerequisites, then creates or replaces one structured artifact. There is at most one concept artifact per concept.
+A recommendation names a suitable unknown concept and why; it creates nothing. A lesson or review reads only the original source regions in that concept's persisted source scopes plus required prerequisite scopes, then creates or replaces one structured artifact. It retains the source's full level of detail rather than summarizing it. There is at most one concept artifact per concept.
 
 ### Ask a grounded question
 
@@ -95,8 +96,8 @@ Stage source updates and calculate graph, staleness, and known-set consequences 
 - Load `SKILL.md` once, then only the role prompt needed for the current action.
 - Inspect compact manifests before opening Sources.
 - Never use rendered HTML or old artifacts as factual context.
-- Read only the PDF pages or text ranges needed for answers, lessons, reviews, and quizzes.
-- Cover every Source when creating a graph. For large inputs, divide work by PDF page ranges or text line ranges and reconcile grounded results against the originals.
+- Read only a concept's persisted PDF-page or text-line scopes for lessons and reviews; do not audit the whole Source again.
+- Cover every Source when creating a graph. For large inputs, divide all pages/lines into exhaustive disjoint chunks, inventory every concept, then synthesize those compact inventories without rereading the full originals.
 - Start specialists without inherited chat history and provide a self-contained, scoped handoff.
 - Reuse a quiz specialist only for that active quiz.
 - Keep chat operational and concise.

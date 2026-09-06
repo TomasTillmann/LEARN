@@ -470,7 +470,7 @@
         let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null, frame = null, ticks = 0;
 
         function tickGraph() {
-          // ponytail: pairwise repulsion is simplest; use Barnes-Hut if topics grow beyond the 120-node contract.
+          // ponytail: pairwise repulsion is simplest; use Barnes-Hut if large-book graphs make settling slow.
           for (let left = 0; left < points.length; left += 1) for (let right = left + 1; right < points.length; right += 1) {
             const a = points[left], b = points[right], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
             const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
@@ -617,6 +617,11 @@
         });
         const evidence = node("ul", { class: "relation-list" });
         concept.evidence.forEach(reference => { const source = sourceFor(topic, reference.sourceId), href = source && safeLocal(source.href); evidence.append(node("li", {}, href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || reference.sourceId }), ` — ${reference.locator}`)); });
+        if (concept.sourceScopes?.length) {
+          const scopes = node("ul", { class: "relation-list" });
+          concept.sourceScopes.forEach(scope => { const source = sourceFor(topic, scope.sourceId), href = source && safeLocal(source.href), ranges = scope.ranges.map(([start, end]) => start === end ? start : `${start}–${end}`).join(", "); scopes.append(node("li", {}, href ? node("a", { href, target: "_blank", rel: "noopener", text: source.title }) : node("strong", { text: source?.title || scope.sourceId }), ` — ${scope.unit === "page" ? "pages" : "lines"} ${ranges}`)); });
+          host.append(node("h2", { text: "Learning scope" }), scopes);
+        }
         host.append(node("h2", { text: "Grounding" }), evidence); main.append(host);
       }
 

@@ -21,7 +21,7 @@ These invariants apply to the session manager and every specialist.
 
 ## Semantic state
 
-- Graph edges point from prerequisite to dependent. Nodes and edges require current `{sourceId, locator}` evidence. The graph is acyclic, has unique node IDs and edges, and contains no self-edge or missing reference.
+- Graph edges point from prerequisite to dependent. Every node stores exhaustive structured `sourceScopes` for its later learning material and nodes/edges require current `{sourceId, locator}` evidence. The graph is acyclic, has unique node IDs and edges, and contains no self-edge or missing reference.
 - Understanding is binary. Marking a concept understood adds all transitive prerequisites; marking it not understood removes it and all transitive dependents. If one learner command conflicts, apply its negative declarations last and explain the resulting closure.
 - New concepts start unknown unless prerequisite closure for an already-understood dependent implies otherwise. Removing or materially changing a concept removes its concept artifact; removal also drops its known entry. Removing an edge never demotes knowledge.
 - A materially changed concept and its dependents may be demoted only after the learner sees that consequence. The learner may override by making another consistent declaration.

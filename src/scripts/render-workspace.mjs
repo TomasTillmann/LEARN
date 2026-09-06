@@ -204,23 +204,52 @@ function validateEvidence(items, label, evidence) {
   }
 }
 
-function validateGraph(graph, knownSet, currentHashes, label = "concept graph", sourceProblems = new Map()) {
+function validateSourceScopes(items, label, evidence, sourceTypes) {
+  requireArray(items, label);
+  if (!items.length) fail(`${label} must be non-empty`);
+  const seen = new Set();
+  for (const item of items) {
+    requireObject(item, `${label} source`);
+    onlyKeys(item, ["sourceId", "unit", "ranges"], `${label} source`);
+    requireId(item.sourceId, `${label} source ID`);
+    if (seen.has(item.sourceId)) fail(`${label} contains duplicate source: ${item.sourceId}`);
+    seen.add(item.sourceId);
+    const expectedUnit = sourceTypes.get(item.sourceId) === "pdf" ? "page" : sourceTypes.get(item.sourceId) === "text" ? "line" : null;
+    if (!expectedUnit) fail(`${label} references an unregistered source: ${item.sourceId}`);
+    if (item.unit !== expectedUnit) fail(`${label} for ${item.sourceId} must use ${expectedUnit} ranges`);
+    requireArray(item.ranges, `${label} ranges (${item.sourceId})`);
+    if (!item.ranges.length) fail(`${label} ranges (${item.sourceId}) must be non-empty`);
+    let previousEnd = null;
+    for (const range of item.ranges) {
+      if (!Array.isArray(range) || range.length !== 2 || !range.every((value) => Number.isSafeInteger(value) && value > 0) || range[0] > range[1]) fail(`${label} ranges (${item.sourceId}) must be positive inclusive [start,end] integer pairs`);
+      if (previousEnd !== null && range[0] <= previousEnd + 1) fail(`${label} ranges (${item.sourceId}) must be sorted, non-overlapping, and have adjacent ranges merged`);
+      previousEnd = range[1];
+    }
+    evidence.add(item.sourceId);
+  }
+}
+
+function validateGraph(graph, knownSet, currentHashes, label = "concept graph", sourceProblems = new Map(), sourceTypes = new Map(), sourceScopesRequired = false) {
   requireObject(graph, label);
   onlyKeys(graph, ["nodes", "edges", "sourceHashes"], label);
   requireArray(graph.nodes, `${label} nodes`);
   requireArray(graph.edges, `${label} edges`);
   requireArray(knownSet, `${label} known set`);
-  if (graph.nodes.length > 120) fail(`${label} cannot contain more than 120 concepts`);
   const ids = new Set();
   const evidence = new Set();
+  let missingScopes = false;
   for (const node of graph.nodes) {
     requireObject(node, `${label} concept`);
-    onlyKeys(node, ["id", "label", "description", "evidence"], `${label} concept`);
+    onlyKeys(node, ["id", "label", "description", "sourceScopes", "evidence"], `${label} concept`);
     requireId(node.id, `${label} concept ID`);
     if (ids.has(node.id)) fail(`${label} concept IDs must be unique: ${node.id}`);
     ids.add(node.id);
     requireText(node.label, `${label} concept label (${node.id})`);
     requireText(node.description, `${label} concept description (${node.id})`);
+    if (node.sourceScopes === undefined) {
+      if (sourceScopesRequired) fail(`${label} concept sourceScopes (${node.id}) must be non-empty`);
+      missingScopes = true;
+    } else validateSourceScopes(node.sourceScopes, `${label} concept sourceScopes (${node.id})`, evidence, sourceTypes);
     validateEvidence(node.evidence, `${label} concept evidence (${node.id})`, evidence);
   }
   const indegree = new Map([...ids].map((id) => [id, 0]));
@@ -254,6 +283,7 @@ function validateGraph(graph, knownSet, currentHashes, label = "concept graph", 
   for (const id of knownSet) { if (!ids.has(id)) fail(`${label} known set references an unknown concept: ${id}`); known.add(id); }
   for (const { from, to } of graph.edges) if (known.has(to) && !known.has(from)) fail(`${label} known set is not prerequisite-closed: ${to} requires ${from}`);
   const staleReasons = validateHashSnapshot(graph.sourceHashes, evidence, currentHashes, `${label} sourceHashes`, sourceProblems);
+  if (missingScopes) staleReasons.push("Concept graph has concepts without structured source scopes and must be reconciled.");
   return { graph: { nodes: graph.nodes, edges: graph.edges }, staleReasons, evidence };
 }
 
@@ -359,6 +389,7 @@ async function loadTopic(outputRoot, ref) {
   const sourceIds = new Set();
   const currentHashes = new Map();
   const sourceProblems = new Map();
+  const sourceTypes = new Map();
   const sources = [];
   for (const source of topic.sources) {
     requireObject(source, "source metadata");
@@ -368,6 +399,7 @@ async function loadTopic(outputRoot, ref) {
     sourceIds.add(source.id);
     requireText(source.title, `source title (${source.id})`);
     if (!new Set(["text", "pdf"]).has(source.type)) fail(`source type must be text or pdf: ${source.id}`);
+    sourceTypes.set(source.id, source.type);
     optionalText(source.author, `source author (${source.id})`);
     optionalText(source.locator, `source locator (${source.id})`);
     requireDate(source.addedAt, `source addedAt (${source.id})`);
@@ -385,7 +417,7 @@ async function loadTopic(outputRoot, ref) {
     else sourceProblems.set(source.id, inspection.problem);
     sources.push({ id: source.id, title: source.title, type: source.type, author: source.author, locator: source.locator, addedAt: source.addedAt, ...(file ? { href: localHref(outputRoot, file) } : {}), ...(inspection.problem ? { integrityProblem: inspection.problem } : {}) });
   }
-  const graphResult = validateGraph(graphDoc.value, knownState.conceptIds, currentHashes, "concept graph", sourceProblems);
+  const graphResult = validateGraph(graphDoc.value, knownState.conceptIds, currentHashes, "concept graph", sourceProblems, sourceTypes);
   const graphIds = new Set(graphResult.graph.nodes.map(({ id }) => id));
   const artifactIds = new Set();
   const conceptArtifacts = new Set();
@@ -407,6 +439,7 @@ async function loadTopic(outputRoot, ref) {
     view: { projectId: ref.projectId, id: ref.id, name: ref.name, title: topic.title, eyebrow: topic.eyebrow, summary: topic.summary, updatedAt: topic.updatedAt, reconciliationRequired: topic.graphReconciliationRequired || graphStale, reconciliationReasons, graph: graphResult.graph, knownSet: knownState.conceptIds, sources, artifacts },
     currentHashes,
     sourceProblems,
+    sourceTypes,
     stateHashes,
     graphStale,
     explicitReconciliation: topic.graphReconciliationRequired,
@@ -449,7 +482,7 @@ function validateSession(session, loaded, current) {
   } else {
     if (!loaded.explicitReconciliation && !loaded.graphStale) fail("graph proposal requires graph reconciliation to be pending");
     if (session.proposedGraph === undefined || !Array.isArray(session.proposedKnownSet)) fail("graph proposal requires proposedGraph and proposedKnownSet");
-    const result = validateGraph(session.proposedGraph, session.proposedKnownSet, loaded.currentHashes, "proposed graph", loaded.sourceProblems);
+    const result = validateGraph(session.proposedGraph, session.proposedKnownSet, loaded.currentHashes, "proposed graph", loaded.sourceProblems, loaded.sourceTypes, true);
     proposedGraph = result.graph;
     proposedKnownSet = session.proposedKnownSet;
     for (const id of result.evidence) referencedSources.add(id);
@@ -622,7 +655,10 @@ async function check() {
     const sourceBytes = Buffer.from(sourceBody);
     const sourceHash = sha256(sourceBytes);
     const pdfBytes = tinyPdf;
-    const graph = { nodes: [{ id: "basics", label: "Basics", description: "The foundation.", evidence: [{ sourceId: "source", locator: "Line 1" }] }], edges: [], sourceHashes: { source: sourceHash } };
+    const graph = { nodes: [{ id: "basics", label: "Basics", description: "The foundation.", sourceScopes: [{ sourceId: "source", unit: "line", ranges: [[1, 1]] }], evidence: [{ sourceId: "source", locator: "Line 1" }] }], edges: [], sourceHashes: { source: sourceHash } };
+    const graphInputs = [[], new Map([["source", sourceHash]]), "test graph", new Map(), new Map([["source", "text"]])];
+    assert.throws(() => validateGraph({ ...graph, nodes: [{ ...graph.nodes[0], sourceScopes: [{ sourceId: "source", unit: "page", ranges: [[1, 1]] }] }] }, ...graphInputs, true), /must use line ranges/);
+    assert.match(validateGraph({ ...graph, nodes: [{ ...graph.nodes[0], sourceScopes: undefined }] }, ...graphInputs).staleReasons[0], /must be reconciled/);
     const known = { conceptIds: [] };
     const topic = { title: "Topic", eyebrow: "Test", summary: "Integration fixture.", updatedAt: "2026-09-05", graphReconciliationRequired: false, sources: [{ id: "source", title: "Text source", type: "text", addedAt: "2026-09-05", path: "sources/source.txt" }, { id: "paper", title: "PDF source", type: "pdf", addedAt: "2026-09-05", path: "sources/paper.pdf" }], artifacts: [{ id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", path: "artifacts/basics.json" }] };
     const artifact = { id: "basics", conceptId: "basics", kind: "concept", title: "Basics", summary: "A safe lesson.", updatedAt: "2026-09-05", sourceHashes: { source: sourceHash }, sections: [{ id: "lesson", title: "Lesson", kind: "source", purpose: "lesson", markdown: "Safe text with a [reference](https://example.com).", citationIds: ["source-one"] }], citations: [{ id: "source-one", kind: "source", sourceId: "source", locator: "Line 1" }] };
@@ -648,6 +684,7 @@ async function check() {
     assert.equal(payload.topics.length, 1);
     assert.equal(payload.topics[0].artifacts[0].stale, false);
     assert.equal(payload.topics[0].sources.length, 2);
+    assert.deepEqual(payload.topics[0].graph.nodes[0].sourceScopes[0].ranges, [[1, 1]]);
     assert.match(payload.topics[0].sources[0].href, /^\.\.\//);
     assert.equal(fileURLToPath(new URL(payload.topics[0].sources[0].href, pathToFileURL(path.join(outputRoot, "index.html")))), await realpath(sourceFile));
     assert.equal(fileURLToPath(new URL(payload.topics[0].sources[1].href, pathToFileURL(path.join(outputRoot, "index.html")))), await realpath(pdfFile));
