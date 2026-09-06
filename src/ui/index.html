@@ -440,6 +440,57 @@
         return null;
       }
 
+      function layoutDag(graph, conceptState) {
+        const concepts = graph.nodes.slice().sort(compareConcepts);
+        const byId = new Map(concepts.map(concept => [concept.id, concept]));
+        const parents = new Map(concepts.map(concept => [concept.id, []]));
+        const children = new Map(concepts.map(concept => [concept.id, []]));
+        const indegree = new Map(concepts.map(concept => [concept.id, 0]));
+        graph.edges.forEach(edge => {
+          parents.get(edge.to).push(byId.get(edge.from));
+          children.get(edge.from).push(byId.get(edge.to));
+          indegree.set(edge.to, indegree.get(edge.to) + 1);
+        });
+        parents.forEach(items => items.sort(compareConcepts));
+        children.forEach(items => items.sort(compareConcepts));
+
+        const ranks = new Map(concepts.map(concept => [concept.id, 0]));
+        const queue = concepts.filter(concept => indegree.get(concept.id) === 0);
+        while (queue.length) {
+          const concept = queue.shift();
+          children.get(concept.id).forEach(child => {
+            ranks.set(child.id, Math.max(ranks.get(child.id), ranks.get(concept.id) + 1));
+            indegree.set(child.id, indegree.get(child.id) - 1);
+            if (indegree.get(child.id) === 0) { queue.push(child); queue.sort(compareConcepts); }
+          });
+        }
+
+        const layers = Array.from({ length: Math.max(...ranks.values()) + 1 }, () => []);
+        concepts.forEach(concept => layers[ranks.get(concept.id)].push(concept));
+        const positions = () => new Map(layers.flatMap(layer => layer.map((concept, index) => [concept.id, index - (layer.length - 1) / 2])));
+        const reorder = (layer, neighbors, order) => layer.sort((left, right) => {
+          const center = concept => neighbors.get(concept.id).length
+            ? neighbors.get(concept.id).reduce((sum, neighbor) => sum + order.get(neighbor.id), 0) / neighbors.get(concept.id).length
+            : order.get(concept.id);
+          return center(left) - center(right) || compareConcepts(left, right);
+        });
+        for (let pass = 0; pass < 4; pass += 1) {
+          let order = positions();
+          for (let column = 1; column < layers.length; column += 1) { reorder(layers[column], parents, order); order = positions(); }
+          order = positions();
+          for (let column = layers.length - 2; column >= 0; column -= 1) { reorder(layers[column], children, order); order = positions(); }
+        }
+
+        const degree = new Map(concepts.map(concept => [concept.id, parents.get(concept.id).length + children.get(concept.id).length]));
+        return layers.flatMap((layer, column) => layer.map((concept, row) => ({
+          ...concept,
+          state: conceptState(concept.id),
+          x: (column - (layers.length - 1) / 2) * 260,
+          y: (row - (layer.length - 1) / 2) * 72,
+          radius: 4 + Math.min(7, Math.sqrt(degree.get(concept.id)) * 2.2),
+        })));
+      }
+
       function renderGraph(topic) {
         const state = graphState(topic);
         const host = node("article", { class: "document wide" }, node("h1", { text: topic.title }), node("p", { class: "meta", text: `${topic.eyebrow} · updated ${topic.updatedAt}` }), node("p", { class: "lede", text: topic.summary }));
@@ -447,47 +498,19 @@
         if (!state.graph.nodes.length) {
           host.append(node("div", { class: "empty", text: topic.reconciliationRequired ? "The concept graph is waiting for review in chat." : "No concepts yet." })); main.append(host); return;
         }
-        const canvas = node("canvas", { class: "graph-canvas", tabindex: "0", "aria-label": `Interactive prerequisite gravity graph with ${state.graph.nodes.length} concepts. Arrows point from prerequisite to dependent. Use the Concepts list for keyboard navigation.` });
+        const canvas = node("canvas", { class: "graph-canvas", tabindex: "0", "aria-label": `Interactive layered prerequisite graph with ${state.graph.nodes.length} concepts. Concepts progress from left to right. Arrows point from prerequisite to dependent. Use the Concepts list for keyboard navigation.` });
         const zoomIn = node("button", { class: "graph-tool", type: "button", "aria-label": "Zoom in", text: "+" });
         const zoomOut = node("button", { class: "graph-tool", type: "button", "aria-label": "Zoom out", text: "−" });
         const reset = node("button", { class: "graph-tool", type: "button", "aria-label": "Reset graph view", text: "⌂" });
-        host.append(node("div", { class: "graph-frame" }, canvas, node("div", { class: "graph-tools" }, zoomOut, reset, zoomIn)), node("div", { class: "graph-legend" }, node("span", { class: "legend-item" }, node("span", { class: "state-dot known", "aria-hidden": "true" }), "Known"), node("span", { class: "legend-item" }, node("span", { class: "state-dot ready", "aria-hidden": "true" }), "Ready next"), node("span", { class: "legend-item" }, node("span", { class: "state-dot later", "aria-hidden": "true" }), "Later"), node("span", { text: "Arrows: prerequisite → dependent · scroll to zoom · drag to move" })));
+        host.append(node("div", { class: "graph-frame" }, canvas, node("div", { class: "graph-tools" }, zoomOut, reset, zoomIn)), node("div", { class: "graph-legend" }, node("span", { class: "legend-item" }, node("span", { class: "state-dot known", "aria-hidden": "true" }), "Known"), node("span", { class: "legend-item" }, node("span", { class: "state-dot ready", "aria-hidden": "true" }), "Ready next"), node("span", { class: "legend-item" }, node("span", { class: "state-dot later", "aria-hidden": "true" }), "Later"), node("span", { text: "Left to right: prerequisite → dependent · scroll to zoom · drag to move" })));
         main.append(host);
 
         const context = canvas.getContext("2d");
         const edges = state.graph.edges;
         const artifacts = new Map(topic.artifacts.filter(item => item.conceptId).map(item => [item.conceptId, item]));
-        const degree = new Map(state.graph.nodes.map(item => [item.id, 0]));
-        edges.forEach(edge => { degree.set(edge.from, degree.get(edge.from) + 1); degree.set(edge.to, degree.get(edge.to) + 1); });
-        const points = state.graph.nodes.slice().sort(compareConcepts).map((concept, index) => {
-          let hash = 2166136261;
-          for (const character of concept.id) { hash ^= character.charCodeAt(0); hash = Math.imul(hash, 16777619); }
-          const angle = index * 2.399963 + (hash >>> 0) / 4294967296;
-          const radius = 45 + 22 * Math.sqrt(index), nodeRadius = 4 + Math.min(7, Math.sqrt(degree.get(concept.id)) * 2.2);
-          return { ...concept, state: state.state(concept.id), x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0, radius: nodeRadius, mass: nodeRadius * nodeRadius / 16 };
-        });
+        const points = layoutDag(state.graph, state.state);
         const byPoint = new Map(points.map(point => [point.id, point]));
-        let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null, frame = null, ticks = 0;
-
-        function tickGraph() {
-          // ponytail: pairwise repulsion is simplest; use Barnes-Hut if large-book graphs make settling slow.
-          for (let left = 0; left < points.length; left += 1) for (let right = left + 1; right < points.length; right += 1) {
-            const a = points[left], b = points[right], dx = b.x - a.x || .01, dy = b.y - a.y || .01;
-            const distance2 = Math.max(144, dx * dx + dy * dy), force = 950 / distance2;
-            a.vx -= dx * force / a.mass; a.vy -= dy * force / a.mass; b.vx += dx * force / b.mass; b.vy += dy * force / b.mass;
-          }
-          edges.forEach(edge => {
-            const a = byPoint.get(edge.from), b = byPoint.get(edge.to), dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1, force = (distance - 112) * .012;
-            a.vx += dx / distance * force / a.mass; a.vy += dy / distance * force / a.mass; b.vx -= dx / distance * force / b.mass; b.vy -= dy / distance * force / b.mass;
-          });
-          let movement = 0;
-          points.forEach(point => {
-            if (drag?.point === point) { point.vx = point.vy = 0; return; }
-            point.vx = (point.vx - point.x * .0025) * .78; point.vy = (point.vy - point.y * .0025) * .78;
-            point.x += point.vx; point.y += point.vy; movement += Math.abs(point.vx) + Math.abs(point.vy);
-          });
-          return movement;
-        }
+        let width = 0, height = 0, scale = 1, panX = 0, panY = 0, hoverId = null, drag = null;
 
         const screen = point => ({ x: width / 2 + (point.x + panX) * scale, y: height / 2 + (point.y + panY) * scale });
         const pointAt = (x, y) => points.slice().reverse().find(point => { const position = screen(point); return Math.hypot(x - position.x, y - position.y) <= Math.max(10, point.radius * scale + 5); });
@@ -539,18 +562,6 @@
           panX = -(bounds.minX + bounds.maxX) / (2 * scale); panY = -(bounds.minY + bounds.maxY) / (2 * scale); drawGraph();
         }
 
-        function runSimulation() {
-          frame = null;
-          const movement = tickGraph() + tickGraph(); ticks += 2; drawGraph();
-          if (canvas.isConnected && ticks < 260 && movement > .01) frame = requestAnimationFrame(runSimulation);
-        }
-
-        function settleGraph() {
-          let movement = Infinity, settleTicks = 0;
-          while (settleTicks < 4000 && movement > .01) { movement = tickGraph() + tickGraph(); settleTicks += 2; }
-        }
-
-        function heatGraph() { ticks = 0; if (frame === null) frame = requestAnimationFrame(runSimulation); }
         function resizeCanvas() {
           const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return;
           const ratio = Math.min(2, window.devicePixelRatio || 1); width = bounds.width; height = bounds.height; canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio); context.setTransform(ratio, 0, 0, ratio, 0, 0); drawGraph();
@@ -560,7 +571,7 @@
         canvas.addEventListener("pointermove", event => {
           if (!drag) { hoverId = pointAt(event.offsetX, event.offsetY)?.id || null; canvas.style.cursor = hoverId ? "pointer" : "grab"; drawGraph(); return; }
           const dx = event.clientX - drag.x, dy = event.clientY - drag.y; drag.moved ||= Math.hypot(dx, dy) > 4;
-          if (drag.point) { drag.point.x += dx / scale; drag.point.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; heatGraph(); }
+          if (drag.point) { drag.point.x += dx / scale; drag.point.y += dy / scale; drag.x = event.clientX; drag.y = event.clientY; }
           else { panX = drag.panX + dx / scale; panY = drag.panY + dy / scale; }
           drawGraph();
         });
@@ -572,8 +583,8 @@
         reset.addEventListener("click", resetView);
 
         const observer = new ResizeObserver(() => { resizeCanvas(); resetView(); }); observer.observe(canvas);
-        resizeCanvas(); settleGraph(); resetView();
-        graphCleanup = () => { if (frame !== null) cancelAnimationFrame(frame); observer.disconnect(); };
+        resizeCanvas(); resetView();
+        graphCleanup = () => observer.disconnect();
       }
 
       function renderSources(topic) {

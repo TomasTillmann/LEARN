@@ -9,7 +9,7 @@ The session manager owns learner chat, approvals, workspace state, and rendering
 1. PDF text is extracted locally with PyMuPDF4LLM. Large PDFs are structurally surveyed, divided into exhaustive page chunks, and inventoried by the required number of fresh agents.
 2. Every validated chunk inventory is checkpointed outside conversation context. A fresh synthesis agent merges only true duplicates and remaps existing evidence-backed edges into the final graph.
 3. Each graph node persists exact `sourceScopes`. A fresh lesson agent reads only those regions and preserves their definitions, reasoning, examples, qualifications, and useful wording.
-4. The deterministic renderer validates workspace JSON and builds the read-only gravity graph and learning pages as one local HTML file.
+4. The deterministic renderer validates workspace JSON and builds the read-only layered DAG and learning pages as one local HTML file.
 
 Original sources and validated JSON are durable. Rendered HTML, graph proposals, and chunk checkpoints are disposable. Specialists never write files or address the learner; the session manager validates their output before persistence.
 

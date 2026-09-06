@@ -66,7 +66,7 @@ Source `type` is `text` or `pdf`; its path is exactly `sources/<source-id>.txt` 
 
 ## Renderer API
 
-This is the only supported graph integration. The graph specialist returns JSON only. Map its `graph` unchanged to `concept_graph.json` after approval, and map `knownConcepts` to `known_set.json` as `{"conceptIds":[...]}`. For a preview, map those same values to `session.json` as `proposedGraph` and `proposedKnownSet`. Then run the existing renderer; the fixed template turns the data into the LEARN gravity graph automatically.
+This is the only supported graph integration. The graph specialist returns JSON only. Map its `graph` unchanged to `concept_graph.json` after approval, and map `knownConcepts` to `known_set.json` as `{"conceptIds":[...]}`. For a preview, map those same values to `session.json` as `proposedGraph` and `proposedKnownSet`. Then run the existing renderer; the fixed template turns the data into the LEARN layered DAG automatically.
 
 Do not invoke a visualization or image tool, draw a graph, or create/modify HTML, SVG, canvas, JavaScript, CSS, layout, controls, or any other UI. The agent owns graph semantics and JSON; `src/ui/index.html` owns the complete graph presentation. A renderer error is an error to report, never permission to make substitute UI.
 

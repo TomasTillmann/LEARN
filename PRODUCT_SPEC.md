@@ -21,7 +21,7 @@ Chat owns commands, approvals, learner answers, and complete quiz exchanges. A q
 
 The workspace manifest, topic manifests, original Sources, concept graph, known set, and structured artifact JSON are authoritative. Rendered HTML, temporary previews, quiz exchanges, and rejected proposals are disposable and never become factual input.
 
-The browser presents navigation, the bundled gravity graph, graph state, lessons, answers, Sources, citations, conflicts, and stale-state warnings. It is read-only and contains no forms, mutation controls, network requests, or state-writing code.
+The browser presents navigation, the bundled layered DAG, graph state, lessons, answers, Sources, citations, conflicts, and stale-state warnings. It is read-only and contains no forms, mutation controls, network requests, or state-writing code.
 
 ## Sources
 
@@ -109,13 +109,13 @@ Efficiency must not omit relevant evidence, weaken citations, lower assessment q
 
 Rendering copies the fixed template and injects one escaped JSON payload into `html/index.html`. It does not embed full Source contents. Source entries link to the original `.txt` or `.pdf` files.
 
-The graph API ends at JSON. Agents generate validated concept graph and known-set JSON; they never generate graph UI. The renderer alone maps that data into the bundled LEARN gravity graph in the fixed HTML template.
+The graph API ends at JSON. Agents generate validated concept graph and known-set JSON; they never generate graph UI. The renderer alone maps that data into the bundled LEARN layered DAG in the fixed HTML template.
 
 The template must:
 
 - work under `file://` without a daemon or web server;
 - render structured Markdown after escaping input and never execute model-authored HTML;
-- use the bundled deterministic force-directed gravity layout for prerequisite graphs;
+- use the bundled deterministic left-to-right layered layout for prerequisite DAGs;
 - expose concept descriptions, prerequisite relationships, understanding state, and citations as semantic text as well as graphics;
 - make source-grounded, conflicting, and stale material visually distinct;
 - preserve safe fragment links and accessibility attributes;
